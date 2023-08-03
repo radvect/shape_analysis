@@ -471,7 +471,13 @@ def run_whole_lineage_tree(direc,thres=final_thresh,min_number=min_len_ROI,thres
     os.remove(direc+linkmatname)
     
     
-
+def main(direc):
+    print(direc)
+    pr.run_one_dataset_logs_only(direc)
+    fg.Final_lineage_tree(direc)
+    run_whole_lineage_tree(direc)
+    
+    
 if __name__ == "__main__":
     # pr.run_one_dataset_logs_only(Directory)
     # fg.Final_lineage_tree(Directory)
@@ -479,10 +485,7 @@ if __name__ == "__main__":
     
     for subdirec in os.listdir('../data/'):
         subdirec=subdirec+'/'
-        print(subdirec)
-        pr.run_one_dataset_logs_only(subdirec)
-        fg.Final_lineage_tree(subdirec)
-        run_whole_lineage_tree(subdirec)
+        main(subdirec)
 
 
 #%%   
