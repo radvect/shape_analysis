@@ -14,6 +14,7 @@ import numpy as np
 from numba import njit
 import tqdm
 from cellpose import utils, io, models
+from skimage.morphology import skeletonize, thin
 import re
 from shutil import rmtree #erasing a whole directory
 import scipy
@@ -495,7 +496,24 @@ def rotation_img(angle,img,point):
 
 
 
-
+def skeletonization(dic,saving=False,savingpath='dict'):
+    diclist=list(dic.keys())
+    for j in tqdm.trange(len(diclist)):
+        fichier=diclist[j]
+        
+        masks=dic[fichier]['masks']
+        mask_number=np.max(masks)
+        skeletons=[]
+        for i in range(mask_number):
+            mask = transfo_bin(masks,i+1) #isolating the i+1-th mask
+            mask = cv2.copyMakeBorder(mask,20,20,20,20,cv2.BORDER_CONSTANT,None,value=0)#add a border to the skel
+            skel = skeletonize(mask)   #, method='lee'
+            # skel = thin(mask, max_num_iter=15)         
+            skel = skel[20:np.shape(skel)[0]-20,20:np.shape(skel)[1]-20]
+            skeletons.append(skel)
+        dic[fichier]['skeleton']=skeletons
+    if saving:
+        np.savez_compressed(savingpath,dic,allow_pickle=True)
 
 
 
@@ -520,10 +538,10 @@ def run_one_dataset_logs_only(dic):
             os.remove(os.path.join(dic, file))
     else:
         os.makedirs(dic)
-    saving_path=dic+'Main_dictionnary'
+    saving_path=os.path.join('results',dic,'Main_dictionnary')
     #dimension and scale of all the final data
     #dimension and scale of all the final data
-    list_savingpath=dic+'masks_list'
+    list_savingpath=os.path.join('results',dic,'masks_list')
     
 
 
@@ -536,8 +554,8 @@ def run_one_dataset_logs_only(dic):
     cel_model_type='cyto2'# 'cyto''cyto2''nuclei'
     cel_channels=[0,0]  # define CHANNELS to run segementation on grayscale=0, R=1, G=2, B=3; channels = [cytoplasm, nucleus]; nucleus=0 if no nucleus
     cel_diameter_param = 85 #120 parameter to adjust the expected size (in pixels) of bacteria. Incease if cellpose detects too small masks, decrease if it don't detects small mask/ fusion them. Should be around 1 
-    # cel_flow_threshold = 0.15  #oldparam :0.15   [0.8,0.2]
-    # cel_cellprob_threshold=0.95 #oldparam :0.95
+    cel_flow_threshold = 0.15  #oldparam :0.15   [0.8,0.2]
+    cel_cellprob_threshold=0.95 #oldparam :0.95
     cel_flow_threshold_small = 0.95
     cel_cellprob_threshold_small=2
     cel_flow_threshold_big = 0.3
@@ -559,8 +577,8 @@ def run_one_dataset_logs_only(dic):
     
     print("run_cel",step)
     step+=1
-    # run_cell_simple(my_data+dic,cel_model_type,cel_channels,cel_diameter_param,cel_flow_threshold,cel_cellprob_threshold,segments_path,gpuval=cell_gpu)
-    run_cell_boundary(my_data+dic,cel_model_type,cel_channels,cel_diameter_param,cel_flow_threshold_small,cel_flow_threshold_big,cel_cellprob_threshold_small,cel_cellprob_threshold_big,segments_path,surf_com_thres,boundary_thres,gpuval=cell_gpu)
+    run_cell_simple(my_data+dic,cel_model_type,cel_channels,cel_diameter_param,cel_flow_threshold,cel_cellprob_threshold,segments_path,gpuval=cell_gpu)
+    # run_cell_boundary(my_data+dic,cel_model_type,cel_channels,cel_diameter_param,cel_flow_threshold_small,cel_flow_threshold_big,cel_cellprob_threshold_small,cel_cellprob_threshold_big,segments_path,surf_com_thres,boundary_thres,gpuval=cell_gpu)
 
     print("download_dict",step)
     step+=1
@@ -583,7 +601,11 @@ def run_one_dataset_logs_only(dic):
     print("main_parenting",step)
     step+=1
     main_parenting(main_dict) #re-run in case all masks in a frame are erased
-
+    
+    print("skeletonization",step)
+    step+=1
+    skeletonization(main_dict)
+    
     print("construction_mask_list",step)
     step+=1
     construction_mask_list(main_dict,list_savingpath,saving=True,savingpath=saving_path)
@@ -601,5 +623,15 @@ if __name__ == "__main__":
     
     run_one_dataset_logs_only(Directory)
     
+    data_dirs = 'results'
+    
+    # for subdir in os.listdir(data_dirs):
+    #     saving_path=os.path.join(data_dirs,subdir,'Main_dictionnary.npz')
+    #     main_dict=np.load(saving_path, allow_pickle=True)['arr_0'].item()
+    #     skeletonization(main_dict,saving=True,savingpath=saving_path)
+    
+    # saving_path=os.path.join(data_dirs,Directory,'Main_dictionnary.npz')
+    # main_dict=np.load(saving_path, allow_pickle=True)['arr_0'].item()
+    # skeletonization(main_dict,saving=True,savingpath=saving_path)
+        
 
-   

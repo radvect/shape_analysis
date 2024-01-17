@@ -14,11 +14,11 @@ import processing as pr
 import final_graph as fg
 import extract_individuals as exi
 from PIL import Image
+from cellpose import utils
 
 
 
-
-Directory= "July15_plate1_xy03/"
+Directory= "July6_plate1_xy02/" 
 
 
 ''' Parameters '''
@@ -193,7 +193,7 @@ def plot_image_one_ROI(ROI,ROI_dic,masks_list,dic):
         
 
 
-def plot_image_lineage_tree(ROI_dic,masks_list,dic,maskcol,indexlist,directory):
+def plot_image_lineage_tree(ROI_dic,masks_list,dic,maskcol,indexlist,directory,show=True):
     newdirect='../masks/'+directory
     if os.path.exists(newdirect):
         for file in os.listdir(newdirect):
@@ -203,11 +203,12 @@ def plot_image_lineage_tree(ROI_dic,masks_list,dic,maskcol,indexlist,directory):
     
     fichier=list(dic.keys())[0]
     while dic[fichier]['child']!='':
+        plt.figure()
         # plot image with masks overlaid
         img=np.array(Image.open(dic[fichier]['adress']))[:,:,1]
-        plt.imshow(img,cmap='gray')
-        plt.title(' time : '+str(dic[fichier]['time']))
-        plt.show()
+        # plt.imshow(img,cmap='gray')
+        # plt.title(' time : '+str(dic[fichier]['time']))
+        # plt.show()
         masks=dic[fichier]['masks']
         masknumber=np.max(masks)
         col_ind_list=np.zeros(masknumber,dtype=np.int32)
@@ -230,7 +231,6 @@ def plot_image_lineage_tree(ROI_dic,masks_list,dic,maskcol,indexlist,directory):
         
         colormask=np.array(maskcol)
         mask_RGB = plot.mask_overlay(pr.renorm_img(img),masks,colors=colormask)#image with masks
-        plt.title(' time : '+str(dic[fichier]['time']))
         plt.imshow(mask_RGB)
         
         # plot the centroids and the centerlines
@@ -240,22 +240,29 @@ def plot_image_lineage_tree(ROI_dic,masks_list,dic,maskcol,indexlist,directory):
             #centroids
             plt.plot(centr[i,1], centr[i,0], color='k',marker='o')
             plt.annotate(roi_ind_list[i], centr[i,::-1], xytext=[10,0], textcoords='offset pixels', color='dimgrey')
+            skel = utils.outlines_list(dic[fichier]['skeleton'][i])[0]
             plt.plot(outlines[i][:,1], outlines[i][:,0], color='r',linewidth=0.5)
+            plt.plot(skel[:,0], skel[:,1], color='w',linewidth=0.5)
         
         main_centroid=dic[fichier]['main_centroid']
         plt.plot(main_centroid[1], main_centroid[0], color='w',marker='o')
             
         #plot the displacement of the centroid between two images
-        plt.title(directory)
+        plt.title(f'{directory} at time {dic[fichier]["time"]}')
         plt.savefig(newdirect+fichier+'.jpg', format='jpg', dpi=400)
-        plt.show()
+        if show:
+            plt.show()
+        else:
+            plt.close()
+        
         fichier=dic[fichier]['child']
     
+    plt.figure()
     # plot image with masks overlaid
     img=np.array(Image.open(dic[fichier]['adress']))[:,:,1]
-    plt.imshow(img,cmap='gray')
-    plt.title(' time : '+str(dic[fichier]['time']))
-    plt.show()
+    # plt.imshow(img,cmap='gray')
+    # plt.title(' time : '+str(dic[fichier]['time']))
+    # plt.show()
     masks=dic[fichier]['masks']
     masknumber=np.max(masks)
     col_ind_list=np.zeros(masknumber,dtype=np.int32)
@@ -277,7 +284,6 @@ def plot_image_lineage_tree(ROI_dic,masks_list,dic,maskcol,indexlist,directory):
     masks=pr.update_masks(masks,col_ind_list)
     colormask=np.array(maskcol)
     mask_RGB = plot.mask_overlay(img,masks,colors=colormask)#image with masks
-    plt.title('time : '+str(dic[fichier]['time']))
     plt.imshow(mask_RGB)
     
     # plot the centroids and the centerlines
@@ -287,14 +293,19 @@ def plot_image_lineage_tree(ROI_dic,masks_list,dic,maskcol,indexlist,directory):
         #centroids
         plt.plot(centr[i,1], centr[i,0], color='k',marker='o')
         plt.annotate(roi_ind_list[i], centr[i,::-1], xytext=[10,0], textcoords='offset pixels', color='dimgrey')
+        skel = utils.outlines_list(dic[fichier]['skeleton'][i])[0]
         plt.plot(outlines[i][:,1], outlines[i][:,0], color='r',linewidth=0.5)
+        plt.plot(skel[:,0], skel[:,1], color='w',linewidth=0.5)
     
     main_centroid=dic[fichier]['main_centroid']
     plt.plot(main_centroid[1], main_centroid[0], color='w',marker='o')
-    plt.title(directory)
+    plt.title(f'{directory} at time {dic[fichier]["time"]}')
     plt.savefig(newdirect+fichier+'.jpg', format='jpg', dpi=400)
     #plot the displacement of the centroid between two images
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close()
 
 
 
@@ -424,7 +435,7 @@ def manually_regluing(direc,ROIdict,indexlistname,parent,child,division=True):
     
     
     
-def run_whole_lineage_tree(direc,thres=final_thresh,min_number=min_len_ROI,thresmin=thres_min_division):
+def run_whole_lineage_tree(direc,thres=final_thresh,min_number=min_len_ROI,thresmin=thres_min_division,show=True):
     
     
     dicname='Main_dictionnary.npz'
@@ -441,18 +452,19 @@ def run_whole_lineage_tree(direc,thres=final_thresh,min_number=min_len_ROI,thres
 
     indexlistname='masks_ROI_list.npz'
     
+    path = os.path.join('results', direc)
     
     colormask=[[255,0,0],[0,255,0],[0,0,255],[255,255,0],[255,0,255],[0,255,255],[255,204,130],[130,255,204],[130,0,255],[130,204,255]]
 
     
-    masks_list=np.load(direc+listname, allow_pickle=True)['arr_0']
-    main_dict=np.load(direc+dicname, allow_pickle=True)['arr_0'].item()
-    Bool_matrix=np.load(direc+boolmatname)
+    masks_list=np.load(os.path.join(path, listname), allow_pickle=True)['arr_0']
+    main_dict=np.load(os.path.join(path, dicname), allow_pickle=True)['arr_0'].item()
+    Bool_matrix=np.load(os.path.join(path, boolmatname))
 
     
     ROI_dict=exi.extract_individuals(Bool_matrix, direc)
     
-    linmatrix=np.load(direc+linmatname)
+    linmatrix=np.load(os.path.join(path, linmatname))
     
     newdic=filter_good_ROI_dic(ROI_dict,min_number)
     
@@ -461,14 +473,14 @@ def run_whole_lineage_tree(direc,thres=final_thresh,min_number=min_len_ROI,thres
     indexlist=detect_bad_div(newdic,linmatrix,masks_list,thres,thresmin)
 
     plot_lineage_tree(newdic,masks_list,main_dict,colormask,direc)
-    plot_image_lineage_tree(newdic,masks_list,main_dict,colormask,indexlist,direc)
-    np.savez_compressed(direc+ROIdict,newdic,allow_pickle=True)
-    np.savez_compressed(direc+indexlistname,indexlist,allow_pickle=True)
+    plot_image_lineage_tree(newdic,masks_list,main_dict,colormask,indexlist,direc,show=show)
+    np.savez_compressed(os.path.join(path, ROIdict),newdic,allow_pickle=True)
+    np.savez_compressed(os.path.join(path, indexlistname),indexlist,allow_pickle=True)
     
     
-    os.remove(direc+linmatname)
-    os.remove(direc+boolmatname)
-    os.remove(direc+linkmatname)
+    os.remove(os.path.join(path, linmatname))
+    os.remove(os.path.join(path, boolmatname))
+    os.remove(os.path.join(path, linkmatname))
     
     
 def main(direc):
@@ -479,14 +491,39 @@ def main(direc):
     
     
 if __name__ == "__main__":
-    # pr.run_one_dataset_logs_only(Directory)
-    # fg.Final_lineage_tree(Directory)
-    # run_whole_lineage_tree(Directory)
+    pr.run_one_dataset_logs_only(Directory)
+    fg.Final_lineage_tree(Directory)
+    run_whole_lineage_tree(Directory, show=False)
     
-    for subdirec in os.listdir('../data/'):
-        subdirec=subdirec+'/'
-        main(subdirec)
+    # for subdirec in os.listdir('../data/'):
+    #     subdirec=subdirec+'/'
+    #     main(subdirec)
+    
+    # dicname='Main_dictionnary.npz'
 
+    # listname='masks_list.npz'
+
+    # ROIdict='ROI_dict.npz'
+
+    # linmatname='non_trig_Link_matrix.npy'
+
+    # boolmatname="Bool_matrix.npy"
+
+    # linkmatname='Link_matrix.npy'
+
+    # indexlistname='masks_ROI_list.npz'
+    
+    # path = os.path.join('results', Directory)
+    
+    # colormask=[[255,0,0],[0,255,0],[0,0,255],[255,255,0],[255,0,255],[0,255,255],[255,204,130],[130,255,204],[130,0,255],[130,204,255]]
+
+    
+    # masks_list=np.load(os.path.join(path, listname), allow_pickle=True)['arr_0']
+    # newdic = np.load(os.path.join(path, ROIdict), allow_pickle=True)['arr_0']
+    # index_list=np.load(os.path.join(path, indexlistname), allow_pickle=True)['arr_0']
+    # main_dict=np.load(os.path.join(path, dicname), allow_pickle=True)['arr_0'].item()
+    
+    # plot_image_lineage_tree(newdic,masks_list,main_dict,colormask,index_list,Directory)
 
 #%%   
     # # manually_regluing(Directory,ROI_dictionary,index_list_name,'1/100','5/',division=False)

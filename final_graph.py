@@ -5,15 +5,14 @@ Created on Tue May  2 11:43:22 2023
 
 @author: c.soubrier
 """
-
-import processing as pcs
+import os
 import numpy as np
 from numba import njit
 from copy import deepcopy
 import tqdm
+import processing as pcs
 
-
-Directory= "July6_plate1_xy02/"
+Directory= "July6_plate1_xy02/" 
 
 
 ''' Parameters '''
@@ -337,15 +336,17 @@ def update_longest_path(iteration,backwardlinks,value,path):
 
 def Final_lineage_tree(dic,max_diff_time=depth_search,surfthresh=surface_thresh,finthres=final_thresh):
     
-    dicname=dic+'Main_dictionnary.npz'
-
-    listname=dic+'masks_list.npz'
+    path= os.path.join('results', dic)
     
-    linmatname=dic+'non_trig_Link_matrix.npy'
+    dicname = os.path.join(path,'Main_dictionnary.npz')
 
-    boolmatname=dic+"Bool_matrix.npy"
+    listname = os.path.join(path,'masks_list.npz')
+    
+    linmatname = os.path.join(path,'non_trig_Link_matrix.npy')
 
-    linkmatname=dic+'Link_matrix.npy'
+    boolmatname = os.path.join(path,"Bool_matrix.npy")
+
+    linkmatname = os.path.join(path,'Link_matrix.npy')
     
     masks_list=np.load(listname, allow_pickle=True)['arr_0']
     #print(masks_list)
