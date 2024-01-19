@@ -4,5 +4,6 @@ __pycache__
 *.avi
 *.xlsx
 results/*/*
+plots/*/*
 
 !/**/.gitkeep

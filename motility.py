@@ -21,6 +21,7 @@ def motility_traj(direcs,plot=True,ret=True):
 
     ROIdict='ROI_dict.npz'
     
+    title = direcs[0][:6]
     traj=[]
     areas = []
     for dir in direcs:
@@ -47,7 +48,8 @@ def motility_traj(direcs,plot=True,ret=True):
         plt.title('trajectories of the isolated cells')
         for elem in traj:
             plt.plot(elem[:,0],elem[:,1])
-        plt.show()
+        plt.savefig(os.path.join('plots',title+'_trajectories.png'), format='png')
+        # plt.show()
         
         new_traj = np.concatenate(traj)
         fig, ax = plt.subplots(figsize=(5.5, 5.5))
@@ -82,10 +84,10 @@ def motility_traj(direcs,plot=True,ret=True):
         # the xaxis of ax_histx and yaxis of ax_histy are shared with ax,
         # thus there is no need to manually adjust the xlim and ylim of these
         # axis.
-
+        plt.savefig(os.path.join('plots',title+'_distribution.png'), format='png')
         
 
-        plt.show()
+        # plt.show()
     
     if ret:
         return traj, areas
@@ -94,22 +96,27 @@ def motility_traj(direcs,plot=True,ret=True):
 
 
 def stats(direcs):
-
+    title = direcs[0][:6]
     distribution = []
     speed = []
     area_growth = []
+    speed_vs_area = []
+    areas =[]
     for dir in direcs:
         traj, area = motility_traj([dir],plot=False)
         distribution.append(np.concatenate(traj))
         
-        for elem in traj:
+        for i,elem in enumerate(traj):
             veloc = np.divide(np.linalg.norm(elem[1:,:-1]-elem[:-1,:-1] ,axis=1),elem[1:,2]-elem[:-1,2])
             speed.append(np.column_stack((veloc,elem[:-1,2])))
-            
-        for elem in area:
-            veloc = np.divide(elem[1:,0]-elem[:-1,0],elem[1:,1]-elem[:-1,1])
-            area_growth.append(np.column_stack((veloc,elem[:-1,1])))
+            speed_vs_area.append(np.column_stack((veloc,area[i][:-1,0])))
+            veloc = np.divide(area[i][1:,0]-area[i][:-1,0],area[i][1:,1]-area[i][:-1,1])
+            area_growth.append(np.column_stack((veloc,area[i][:-1,1])))
+        
+        areas.append(np.concatenate(area))
 
+    speed_vs_area = np.concatenate(speed_vs_area)
+    areas = np.concatenate(areas)
     distribution = np.concatenate(distribution)
     speed = np.concatenate(speed)
     area_growth = np.concatenate(area_growth)
@@ -120,78 +127,111 @@ def stats(direcs):
 
 
     plt.figure()
-    res = np.array([[np.average(area_growth[area_growth[:,1]==i]),i] for i in np.unique(area_growth[:,1])])
+    plt.title(title)
+    res = np.array([[np.average(area_growth[area_growth[:,1]==i][:,0]),i] for i in np.unique(area_growth[:,1])])
     plt.scatter(res[:,1],res[:,0])
     plt.xlabel('time')
-    plt.ylabel('mean area growth')
-    A = np.vstack([res[:,1], np.ones(len(res[:,0]))]).T
+    plt.ylabel('intantaneous mean area growth')
+    A = np.vstack([res[:,1], np.ones(len(res[:,1]))]).T
     m, c = np.linalg.lstsq(A, res[:,0], rcond=None)[0]
-    plt.plot(res[:,1], m*res[:,1] + c, 'r', label=f'Fitted line with slope {m:.2E}')
-    
+    plt.plot(res[:,1], m*res[:,1] +c, color ='r', label=f'Fitted line with slope {m:.2E}')
+    plt.legend()
+    plt.savefig(os.path.join('plots',title+'_growth.png'), format='png')
 
+    plt.figure()
+    plt.title(title)
+    res = np.array([[np.average(areas[areas[:,1]==i][:,0]),i] for i in np.unique(areas[:,1])])
+    plt.scatter(res[:,1],res[:,0])
+    plt.xlabel('time')
+    plt.ylabel('mean area')
+    plt.savefig(os.path.join('plots',title+'_area.png'), format='png')
     
     
     plt.figure()
-    res = np.array([[np.average(speed[speed[:,1]==i]**2),i] for i in np.unique(speed[:,1])])
-    plt.plot(res[:,1],res[:,0], label = 'averaged squared instantaneous speed', color = 'green')
-    alpha, beta, time = superdiff_parameters(res)
-    plt.plot(time, beta*np.power(time, alpha), color = 'purple', linestyle= 'dotted', label =  r"squared speed fit $\beta t^{\alpha} $ with $(\alpha,\beta)$ = "+f" {alpha:.2E} and {beta:.2E}")
+    plt.title(title)
+    res = np.array([[np.average(speed[speed[:,1]==i][:,0]**2),i] for i in np.unique(speed[:,1])])
+    plt.scatter(res[:,1],res[:,0])
+    plt.xlabel('time')
+    plt.ylabel('averaged squared instantaneous speed')
+    plt.savefig(os.path.join('plots',title+'_speed.png'), format='png')
     
-    
-    res = np.array([[np.average(MSD[MSD[:,1]==i]**2),i] for i in np.unique(MSD[:,1])])
+    plt.figure()
+    res = np.array([[np.average(MSD[MSD[:,1]==i][:,0]**2),i] for i in np.unique(MSD[:,1])])
     plt.scatter(res[:,1],res[:,0])
     plt.xlabel('time')
     plt.ylabel('mean squared distance')
-    alpha, beta, time = superdiff_parameters(res)
-    plt.title('MSD of the cells with power approximation (L2 norm)')
+    newres= res[res[:,1]<60]
+    alpha, beta, time = superdiff_parameters(newres)
+    plt.title(f'MSD of the cells with power approximation, with dataset {title}')
     plt.plot(time, beta*np.power(time, alpha), color = 'r', label =  r"MSD fit $\beta t^{\alpha} $ with $(\alpha,\beta)$ = "+f" {alpha:.2E} and {beta:.2E}")
-    
     plt.legend()
+    plt.savefig(os.path.join('plots',title+'_MSD.png'), format='png')
 
     
     plt.figure()
-    plt.title('MSD of the cells with power approximation (L2 norm)')
-    plt.xlabel('time, log scale')
-    plt.ylabel('mean squared distance, log scale')
-    plt.scatter(np.log(res[1:,1]),np.log(res[1:,0]))
-    plt.plot(np.log(time[1:]), np.log(beta*np.power(time[1:], alpha)), color = 'r' )
-    
-    alpha, beta, time = superdiff_parameters_log(res)
-    plt.figure()
+    plt.title(title)
+    bin_number = 30
+    max_area = np.max(speed_vs_area[:,1])
+    values = np.column_stack((speed_vs_area[:,0],max_area/bin_number*np.floor(speed_vs_area[:,1]/(max_area/bin_number))))
+    res = np.array([[np.average(values[values[:,1]==i][:,0]),i] for i in np.unique(values[:,1])])
     plt.scatter(res[:,1],res[:,0])
-    plt.xlabel('time')
-    plt.ylabel('mean squared distance')
-    plt.title('MSD of the cells with power approximation (log-L2 norm)')
-    plt.plot(time, beta*np.power(time, alpha), color = 'r', label =  r"$\beta t^{\alpha} $ with $(\alpha,\beta)$ = "+f" {alpha:.2E} and {beta:.2E}")
+    plt.xlabel('area')
+    plt.ylabel('instantaneous speed')
+    plt.savefig(os.path.join('plots',title+'_speed_vs_area.png'), format='png')
     
+    
+    # plt.figure()
+    # plt.title('MSD of the cells with power approximation (L2 norm)')
+    # plt.xlabel('time, log scale')
+    # plt.ylabel('mean squared distance, log scale')
+    # plt.scatter(np.log(res[1:,1]),np.log(res[1:,0]))
+    # plt.plot(np.log(time[1:]), np.log(beta*np.power(time[1:], alpha)), color = 'r' )
+    
+    # alpha, beta, time = superdiff_parameters_log(res)
+    # plt.figure()
+    # plt.scatter(res[:,1],res[:,0])
+    # plt.xlabel('time')
+    # plt.ylabel('mean squared distance')
+    # plt.title('MSD of the cells with power approximation (log-L2 norm)')
+    # plt.plot(time, beta*np.power(time, alpha), color = 'r', label =  r"$\beta t^{\alpha} $ with $(\alpha,\beta)$ = "+f" {alpha:.2E} and {beta:.2E}")
+    
+    # plt.legend()
+
+    
+    # plt.figure()
+    # plt.title('MSD of the cells with power approximation (log-L2 norm)')
+    # plt.xlabel('time, log scale')
+    # plt.ylabel('mean squared distance, log scale')
+    # plt.scatter(np.log(res[1:,1]),np.log(res[1:,0]))
+    # plt.plot(np.log(time), np.log(beta*np.power(time, alpha)) , color = 'r')
+    
+    plt.figure()
+    
+    plt.title(f'MSD along x axis, with dataset {title}')
+    res = np.array([[np.average(MSDx[MSDx[:,1]==i][:,0]**2),i] for i in np.unique(MSDx[:,1])])
+    newres= res[res[:,1]<60]
+    alpha, beta, time = superdiff_parameters(newres)
+    plt.plot(time, beta*np.power(time, alpha), color = 'r', label =  r"MSD fit $\beta t^{\alpha} $ with $(\alpha,\beta)$ = "+f" {alpha:.2E} and {beta:.2E}")
     plt.legend()
-
-    
-    plt.figure()
-    plt.title('MSD of the cells with power approximation (log-L2 norm)')
-    plt.xlabel('time, log scale')
-    plt.ylabel('mean squared distance, log scale')
-    plt.scatter(np.log(res[1:,1]),np.log(res[1:,0]))
-    plt.plot(np.log(time), np.log(beta*np.power(time, alpha)) , color = 'r')
-    
-    plt.figure()
-    plt.title('MSD along x axis')
-    res = np.array([[np.average(MSDx[MSDx[:,1]==i]**2),i] for i in np.unique(MSDx[:,1])])
     plt.scatter(res[:,1],res[:,0])
     plt.xlabel('time')
     plt.ylabel('mean squared distance')
-    
+    plt.savefig(os.path.join('plots',title+'_MSDx.png'), format='png')
     
     plt.figure()
-    plt.title('MSD along y axis')
-    res = np.array([[np.average(MSDy[MSDy[:,1]==i]**2),i] for i in np.unique(MSDy[:,1])])
+    plt.title(f'MSD along y axis, with dataset {title}')
+    res = np.array([[np.average(MSDy[MSDy[:,1]==i][:,0]**2),i] for i in np.unique(MSDy[:,1])])
+    newres= res[res[:,1]<60]
+    alpha, beta, time = superdiff_parameters(newres)
+    plt.plot(time, beta*np.power(time, alpha), color = 'r', label =  r"MSD fit $\beta t^{\alpha} $ with $(\alpha,\beta)$ = "+f" {alpha:.2E} and {beta:.2E}")
+    plt.legend()
     plt.scatter(res[:,1],res[:,0])
     plt.xlabel('time')
     plt.ylabel('mean squared distance')
-
+    plt.savefig(os.path.join('plots',title+'_MSDy.png'), format='png')
     
     plt.figure()
-    plt.title(r'Time dependent correlation $Corr(X_t,Y_t)$')
+    plt.title(r'Correlation $Corr(X_t,Y_t)$'+f', with dataset {title}')
     res = []
     for i in np.unique(distribution[:,2]):
         if i==0:
@@ -205,9 +245,10 @@ def stats(direcs):
     plt.scatter(res[:,1],res[:,0])
     plt.xlabel('time')
     plt.ylabel('correlation')
+    plt.savefig(os.path.join('plots',title+'_correlation.png'), format='png')
     
     plt.figure()
-    plt.title(r'Time dependent expected value and  standard deviations')
+    plt.title(f'Expected value and standard deviations, with dataset {title}')
     res = []
     res2=[]
     for i in np.unique(distribution[:,2]):
@@ -225,6 +266,7 @@ def stats(direcs):
     plt.xlabel('time')
     plt.ylabel('expected value')
     plt.legend()
+    plt.savefig(os.path.join('plots',title+'_speed.png'), format='png')
     # plt.show()    
     
         
@@ -257,12 +299,16 @@ def superdiff_parameters_log(MSD):
     
     
 if __name__ == "__main__":
+    
     dir_list=os.listdir('results')
-    # dir_list=['July6_plate1_xy02',
-    # 'July6_plate1_xy05',
-    # 'July6_plate1_xy06',
-    # 'July7_plate1_xy01',
-    # 'July7_plate1_xy02']
-    # motility_traj(dir_list)
-    stats(dir_list)
-    plt.show()
+    datasets = [['July6_plate1_xy02', 'July6_plate1_xy05', 'July6_plate1_xy06'],
+                ['July7_plate1_xy01', 'July7_plate1_xy02', 'July7_plate1_xy03', 'July7_plate1_xy04', 'July7_plate1_xy05', 'July7_plate1_xy06', 'July7_plate1_xy07', 'July7_plate1_xy08', 'July7_plate1_xy09'],
+                ['July8_plate1_xy01', 'July8_plate1_xy02', 'July8_plate1_xy04'],
+                ['July13_plate1_xy02 repositioned', 'July13_plate1_xy03', 'July13_plate1_xy05 repositioned', 'July13_plate1_xy07', 'July13_plate1_xy08', 'July13_plate1_xy09', 'July13_plate1_xy10', 'July13_plate1_xy11', 'July13_plate1_xy12'],
+                ['July14_plate1_xy01', 'July14_plate1_xy02', 'July14_plate1_xy03', 'July14_plate1_xy05'],
+                ['July15_plate1_xy01', 'July15_plate1_xy02', 'July15_plate1_xy03']]
+    for elem in datasets:
+        motility_traj(elem)
+        stats(elem)
+        plt.close('all')
+        
