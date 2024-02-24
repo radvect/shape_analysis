@@ -471,8 +471,8 @@ def run_whole_lineage_tree(direc,thres=final_thresh,min_number=min_len_ROI,thres
     ROI_index(newdic)
     
     indexlist=detect_bad_div(newdic,linmatrix,masks_list,thres,thresmin)
-
-    plot_lineage_tree(newdic,masks_list,main_dict,colormask,direc)
+    if show:
+        plot_lineage_tree(newdic,masks_list,main_dict,colormask,direc)
     plot_image_lineage_tree(newdic,masks_list,main_dict,colormask,indexlist,direc,show=show)
     np.savez_compressed(os.path.join(path, ROIdict),newdic,allow_pickle=True)
     np.savez_compressed(os.path.join(path, indexlistname),indexlist,allow_pickle=True)
@@ -491,9 +491,16 @@ def main(direc):
     
     
 if __name__ == "__main__":
-    pr.run_one_dataset_logs_only(Directory)
-    fg.Final_lineage_tree(Directory)
-    run_whole_lineage_tree(Directory, show=False)
+    
+    dir_list = ['July6_plate1_xy02/', 'July6_plate1_xy05/', 'July6_plate1_xy06/',
+            'July7_plate1_xy01/', 'July7_plate1_xy02/', 'July7_plate1_xy03/', 'July7_plate1_xy04/', 'July7_plate1_xy05/', 'July7_plate1_xy06/', 'July7_plate1_xy07/', 'July7_plate1_xy08/', 'July7_plate1_xy09/',
+            'July8_plate1_xy01/', 'July8_plate1_xy02/', 'July8_plate1_xy04/',
+            'July13_plate1_xy02 repositioned/', 'July13_plate1_xy05 repositioned/',  'July13_plate1_xy08/',  'July13_plate1_xy09/',  'July13_plate1_xy10/', 'July13_plate1_xy12/',
+            'July15_plate1_xy01/', 'July15_plate1_xy02/', 'July15_plate1_xy03/']
+    for Directory in dir_list:
+        pr.run_one_dataset_logs_only(Directory)
+        fg.Final_lineage_tree(Directory)
+        run_whole_lineage_tree(Directory, show=False)
     
     # for subdirec in os.listdir('../data/'):
     #     subdirec=subdirec+'/'

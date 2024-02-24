@@ -39,18 +39,17 @@ def motility_traj(direcs,plot=True,ret=True):
                 var_area = np.array([area[i+1]/area[i] for i in range(len(area)-1)])
                 area =  np.array(area)
 
-                if 0.75<=np.min(var_area) and  np.max(var_area)<=1.33 and np.max(np.abs(position[:-1]-position[1:]))<100:
+                if 0.75<=np.min(var_area) and  np.max(var_area)<=1.33 and np.max(np.abs(position[:-1]-position[1:]))<100 and time[0]<20:
                     traj.append(np.column_stack((position-position[0,:],time))) 
                     areas.append(np.column_stack((area,time))) 
 
-    if plot:
+    if plot and traj != []:
         plt.figure()
         plt.title('trajectories of the isolated cells')
         for elem in traj:
             plt.plot(elem[:,0],elem[:,1])
         plt.savefig(os.path.join('plots',title+'_trajectories.png'), format='png')
         # plt.show()
-        
         new_traj = np.concatenate(traj)
         fig, ax = plt.subplots(figsize=(5.5, 5.5))
         
@@ -304,11 +303,13 @@ if __name__ == "__main__":
     datasets = [['July6_plate1_xy02', 'July6_plate1_xy05', 'July6_plate1_xy06'],
                 ['July7_plate1_xy01', 'July7_plate1_xy02', 'July7_plate1_xy03', 'July7_plate1_xy04', 'July7_plate1_xy05', 'July7_plate1_xy06', 'July7_plate1_xy07', 'July7_plate1_xy08', 'July7_plate1_xy09'],
                 ['July8_plate1_xy01', 'July8_plate1_xy02', 'July8_plate1_xy04'],
-                ['July13_plate1_xy02 repositioned', 'July13_plate1_xy03', 'July13_plate1_xy05 repositioned', 'July13_plate1_xy07', 'July13_plate1_xy08', 'July13_plate1_xy09', 'July13_plate1_xy10', 'July13_plate1_xy11', 'July13_plate1_xy12'],
-                ['July14_plate1_xy01', 'July14_plate1_xy02', 'July14_plate1_xy03', 'July14_plate1_xy05'],
+                ['July13_plate1_xy02 repositioned', 'July13_plate1_xy05 repositioned',  'July13_plate1_xy08',  'July13_plate1_xy09',  'July13_plate1_xy10', 'July13_plate1_xy12'],
                 ['July15_plate1_xy01', 'July15_plate1_xy02', 'July15_plate1_xy03']]
     for elem in datasets:
         motility_traj(elem)
         stats(elem)
         plt.close('all')
         
+        
+# problem  'July13_plate1_xy03' time 7-8 'July13_plate1_xy07' time 7-8 'July13_plate1_xy11' time 7-8
+# problem 'July14_plate1_xy01' time 54 - 55  'July14_plate1_xy02' time 34 - 35  'July14_plate1_xy03' time 54 - 55 'July14_plate1_xy05' time 54 - 55

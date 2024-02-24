@@ -5,5 +5,8 @@ __pycache__
 *.xlsx
 results/*/*
 plots/*/*
-
+plots/
+cells/
+cells/*/*
 !/**/.gitkeep
+

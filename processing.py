@@ -101,7 +101,9 @@ def natural_keys(text):
         list of the digits
 
     '''
-    return [ int(c) if c.isdigit() else c for c in re.split(r'(\d+)', text) ]
+    l = [ int(c) if c.isdigit() else c for c in re.split(r'(\d+)', text) ]
+    l.reverse()
+    return l
 
 
 
