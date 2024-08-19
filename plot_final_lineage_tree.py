@@ -15,7 +15,7 @@ import final_graph as fg
 import extract_individuals as exi
 from PIL import Image
 from cellpose import utils
-
+from multiprocessing import Pool
 
 
 Directory= "July6_plate1_xy02/" 
@@ -240,7 +240,7 @@ def plot_image_lineage_tree(ROI_dic,masks_list,dic,maskcol,indexlist,directory,s
             #centroids
             plt.plot(centr[i,1], centr[i,0], color='k',marker='o')
             plt.annotate(roi_ind_list[i], centr[i,::-1], xytext=[10,0], textcoords='offset pixels', color='dimgrey')
-            skel = utils.outlines_list(dic[fichier]['skeleton'][i])[0]
+            skel = utils.outlines_list(dic[fichier]['skeleton'][i], multiprocessing = False)[0]
             plt.plot(outlines[i][:,1], outlines[i][:,0], color='r',linewidth=0.5)
             plt.plot(skel[:,0], skel[:,1], color='w',linewidth=0.5)
         
@@ -293,7 +293,7 @@ def plot_image_lineage_tree(ROI_dic,masks_list,dic,maskcol,indexlist,directory,s
         #centroids
         plt.plot(centr[i,1], centr[i,0], color='k',marker='o')
         plt.annotate(roi_ind_list[i], centr[i,::-1], xytext=[10,0], textcoords='offset pixels', color='dimgrey')
-        skel = utils.outlines_list(dic[fichier]['skeleton'][i])[0]
+        skel = utils.outlines_list(dic[fichier]['skeleton'][i],multiprocessing=False)[0]
         plt.plot(outlines[i][:,1], outlines[i][:,0], color='r',linewidth=0.5)
         plt.plot(skel[:,0], skel[:,1], color='w',linewidth=0.5)
     
@@ -487,7 +487,7 @@ def main(direc):
     print(direc)
     pr.run_one_dataset_logs_only(direc)
     fg.Final_lineage_tree(direc)
-    run_whole_lineage_tree(direc)
+    run_whole_lineage_tree(direc, show=False)
     
     
 if __name__ == "__main__":
@@ -497,68 +497,12 @@ if __name__ == "__main__":
             'July8_plate1_xy01/', 'July8_plate1_xy02/', 'July8_plate1_xy04/',
             'July13_plate1_xy02 repositioned/', 'July13_plate1_xy05 repositioned/',  'July13_plate1_xy08/',  'July13_plate1_xy09/',  'July13_plate1_xy10/', 'July13_plate1_xy12/',
             'July15_plate1_xy01/', 'July15_plate1_xy02/', 'July15_plate1_xy03/']
-    for Directory in dir_list:
-        pr.run_one_dataset_logs_only(Directory)
-        fg.Final_lineage_tree(Directory)
-        run_whole_lineage_tree(Directory, show=False)
+    with Pool(processes=8) as pool:
+            for direc in pool.imap_unordered(main, dir_list):
+                pass
     
-    # for subdirec in os.listdir('../data/'):
-    #     subdirec=subdirec+'/'
-    #     main(subdirec)
     
-    # dicname='Main_dictionnary.npz'
 
-    # listname='masks_list.npz'
-
-    # ROIdict='ROI_dict.npz'
-
-    # linmatname='non_trig_Link_matrix.npy'
-
-    # boolmatname="Bool_matrix.npy"
-
-    # linkmatname='Link_matrix.npy'
-
-    # indexlistname='masks_ROI_list.npz'
-    
-    # path = os.path.join('results', Directory)
-    
-    # colormask=[[255,0,0],[0,255,0],[0,0,255],[255,255,0],[255,0,255],[0,255,255],[255,204,130],[130,255,204],[130,0,255],[130,204,255]]
-
-    
-    # masks_list=np.load(os.path.join(path, listname), allow_pickle=True)['arr_0']
-    # newdic = np.load(os.path.join(path, ROIdict), allow_pickle=True)['arr_0']
-    # index_list=np.load(os.path.join(path, indexlistname), allow_pickle=True)['arr_0']
-    # main_dict=np.load(os.path.join(path, dicname), allow_pickle=True)['arr_0'].item()
-    
-    # plot_image_lineage_tree(newdic,masks_list,main_dict,colormask,index_list,Directory)
-
-#%%   
-    # # manually_regluing(Directory,ROI_dictionary,index_list_name,'1/100','5/',division=False)
-    # dic_name='Main_dictionnary.npz'
-
-    # list_name='masks_list.npz'
-
-    # ROI_dict='ROI_dict.npz'
-
-    # linmat_name='non_trig_Link_matrix.npy'
-
-    # boolmatname="Bool_matrix.npy"
-
-    # linkmatname='Link_matrix.npy'
-
-    # index_list_name='masks_ROI_list.npz'
-    # colormask=[[255,0,0],[0,255,0],[0,0,255],[255,255,0],[255,0,255],[0,255,255],[255,204,130],[130,255,204],[130,0,255],[130,204,255]]
-
-    # index_list=np.load(Directory+index_list_name, allow_pickle=True)['arr_0']
-    # List_of_masks=np.load(Directory+list_name, allow_pickle=True)['arr_0']
-    # main_dict=np.load(Directory+dic_name, allow_pickle=True)['arr_0'].item()
-    # newdic=np.load(Directory+ROI_dict, allow_pickle=True)['arr_0'].item()
-    
-    # print(newdic.keys())
-    # # plot_image_one_ROI('ROI 170',newdic,List_of_masks,main_dict)
-    # # plot_lineage_tree(newdic,List_of_masks,main_dict,colormask,Directory)
-    # plot_image_lineage_tree(newdic,List_of_masks,main_dict,colormask,index_list,Directory)
-    
 
 
 

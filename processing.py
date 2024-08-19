@@ -218,9 +218,9 @@ def run_cell_boundary(data,mod,chan,dia,flow_small,flow_big,celp_small,celp_big,
         io.masks_flows_to_seg(img, newmask, flows1, diams1, seg+listdir[i][:-4], chan)
 
 #%%
-def download_dict_logs_only(dir_im,segmentspath,saving=True,savingpath='dict'):
+def download_dict_logs_only(mydata,dir,segmentspath,saving=True,savingpath='dict'):
     
-    
+    dir_im = os.path.join(mydata,dir)
     files = os.listdir(dir_im)
     dic={}
     
@@ -239,11 +239,11 @@ def download_dict_logs_only(dir_im,segmentspath,saving=True,savingpath='dict'):
             dic[fichier]['time']=t      #time in minutes after the beginning of the experiment
             dic[fichier]['adress']=dir_im+fichier+'.tif'
             dic[fichier]['masks']=dat['masks']
-            dic[fichier]['outlines']=utils.outlines_list(dat['masks'])
+            dic[fichier]['outlines']=utils.outlines_list(dat['masks'], multiprocessing=False)
             dic[fichier]['angle']=0
         t+=1
     #deleting temporary dir
-    rmtree(segmentspath)
+    rmtree(dir)
     if saving:
         np.savez_compressed(savingpath,dic)
     return dic
@@ -302,13 +302,12 @@ def numba_centroid_area(masks):
     return(centroid,area)
 
 #%% Erasing too small masks (less than the fraction frac_mask of the largest mask), and mask with a ratio of saturated area superior to frac_satur . Creating the centroid of the union of acceptable  mask and saving as main_centroid
-def clean_masks(frac_mask,frac_satur,dic,saving=False,savingpath='dict'): 
+def clean_masks(frac_mask,dic,saving=False,savingpath='dict'): 
     #Erase the masks that are too small (and the centroids too)
     diclist=list(dic.keys())
     for j in tqdm.trange(len(diclist)):
         fichier=diclist[j]
         masks=dic[fichier]['masks']
-        img=np.array(Image.open(dic[fichier]['adress']))[:,:,1]
         area=dic[fichier]['area']
         centroid=dic[fichier]['centroid']
         outlines=dic[fichier]['outlines']
@@ -316,19 +315,13 @@ def clean_masks(frac_mask,frac_satur,dic,saving=False,savingpath='dict'):
         
         max_area=np.max(area)
         L=len(area)
-        non_saturated=np.zeros(L) #detection of the non saturated masks
-        for i in range(L):
-            if satur_area(img,masks,i+1)<frac_satur*area[i]:
-                non_saturated[i]=1
-        
-        max_area=max([area[i]*non_saturated[i] for i in range(L)])
         non_defect=np.zeros(L) #classification of the allowed masks
         non_defect_count=0
         newoutlines=[]
         
         
         for i in range(L):
-            if area[i]>=frac_mask*max_area and non_saturated[i]==1:
+            if area[i]>=frac_mask*max_area:
                 non_defect_count+=1
                 non_defect[i]=non_defect_count
                 newoutlines.append(outlines[i][:,::-1].astype(np.int32))
@@ -365,23 +358,7 @@ def clean_masks(frac_mask,frac_satur,dic,saving=False,savingpath='dict'):
         np.savez_compressed(savingpath,dic)
 
 
-@njit
-def satur_area(img,masks,number,thres=0.95):
-    score=-np.inf
-    non_zero=np.nonzero(masks==number)
-    tot_sum=0
-    count=0
-    for i,j in zip(non_zero[0],non_zero[1]):
-        tot_sum+=img[i,j]
-        count+=1
-        if img[i,j]>score:          #selecting the maximum value in the mask of label number
-            score=img[i,j]
-    avg_val=tot_sum/count
-    area=0
-    for i,j in zip(non_zero[0],non_zero[1]):
-            if masks[i,j]==number and img[i,j]>=thres*(score-avg_val)+avg_val:
-                area+=1
-    return area
+
  
 # creating a new mask with changed values
 @njit
@@ -529,7 +506,7 @@ def run_one_dataset_logs_only(dic):
 
     #Temporary directories
     #directory for output data from cellpose 
-    segments_path = "cellpose_output/"
+    segments_path = os.path.join(dic,"cellpose_output/")
 
 
     #Outputs
@@ -566,8 +543,6 @@ def run_one_dataset_logs_only(dic):
     
     #erasing small masks that have a smaller relative size :
     ratio_erasing_masks=0.2
-    #erasing masks that have a ratio of saturated surface bigger than :
-    ratio_saturation=0.1
     
     surf_com_thres=0.5
     boundary_thres=0.3 #threshold to define the boundary of a cell (bigger one if =1, smaller if =0)
@@ -584,7 +559,7 @@ def run_one_dataset_logs_only(dic):
 
     print("download_dict",step)
     step+=1
-    main_dict=download_dict_logs_only(my_data+dic,segments_path,saving=True,savingpath=saving_path)
+    main_dict=download_dict_logs_only(my_data,dic,segments_path,saving=True,savingpath=saving_path)
     
     # main_dict=np.load(saving_path+'.npz', allow_pickle=True)['arr_0'].item()
     
@@ -598,7 +573,7 @@ def run_one_dataset_logs_only(dic):
 
     print("clean_masks",step)
     step+=1
-    clean_masks(ratio_erasing_masks,ratio_saturation, main_dict)
+    clean_masks(ratio_erasing_masks, main_dict)
     
     print("main_parenting",step)
     step+=1

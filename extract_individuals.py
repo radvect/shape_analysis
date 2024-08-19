@@ -37,7 +37,7 @@ def extract_individuals(adj_mat,save_dir,filename='ROI_dict'):
         starting_num = int(list(ROI_dict.keys())[-1].split()[-1])+1 # make sure next tree's first ROI is latest ROI ID# + 1
     
     create_children(ROI_dict) # add Children key to each dictionary item
-    np.savez_compressed(save_dir+filename,ROI_dict)
+    # np.savez_compressed(save_dir+filename,ROI_dict)
     # print(ROI_dict)
     return ROI_dict
     
