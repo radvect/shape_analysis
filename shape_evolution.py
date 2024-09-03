@@ -24,5 +24,5 @@ def plot_cell(n):
 
 
 if __name__ == "__main__":
-    plot_cell(1)
+    plot_cell(145)
     

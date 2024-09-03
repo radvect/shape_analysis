@@ -144,7 +144,7 @@ def run_cell_simple(data,mod,chan,dia,thres,celp,seg,gpuval=True):
         else :
             model = models.Cellpose(gpu=False, model_type=mod)
             masks, flows, st, diams = model.eval(img, diameter = dia, channels=chan, flow_threshold = thres, cellprob_threshold=celp)
-        io.masks_flows_to_seg(img, masks, flows, diams, seg+listdir[i][:-4], chan)
+        io.masks_flows_to_seg(img, masks, flows, os.path.join(seg+listdir[i][:-4]), channels=chan, diams=diams)
         
         
 def run_cell_boundary(data,mod,chan,dia,flow_small,flow_big,celp_small,celp_big,seg,surfcomthres,boundarythres,gpuval=True):
@@ -514,7 +514,7 @@ def run_one_dataset_logs_only(dic):
     #Saving path for the dictionnary
     if os.path.exists(dic):
         for file in os.listdir(dic):
-            os.remove(os.path.join(dic, file))
+            rmtree(os.path.join(dic, file))
     else:
         os.makedirs(dic)
     saving_path=os.path.join('results',dic,'Main_dictionnary')

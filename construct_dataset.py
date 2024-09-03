@@ -1,6 +1,7 @@
 import os
 import numpy as np
 from numba import njit
+import shutil
 
 
 
@@ -42,6 +43,13 @@ def main(dir_list):
     ROIdict='ROI_dict.npz'
 
     saving_dir = 'cells'
+    
+    if os.path.exists(saving_dir):
+        for folder in os.listdir(saving_dir):
+            shutil.rmtree(os.path.join(saving_dir, folder))
+    else:
+        os.makedirs(saving_dir)
+        
     count = 1 
     for dir in dir_list:
         path = os.path.join('results', dir)

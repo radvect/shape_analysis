@@ -16,6 +16,7 @@ import extract_individuals as exi
 from PIL import Image
 from cellpose import utils
 from multiprocessing import Pool
+import construct_dataset as cons_dat
 
 
 Directory= "July6_plate1_xy02/" 
@@ -488,6 +489,8 @@ def main(direc):
     pr.run_one_dataset_logs_only(direc)
     fg.Final_lineage_tree(direc)
     run_whole_lineage_tree(direc, show=False)
+
+
     
     
 if __name__ == "__main__":
@@ -501,6 +504,7 @@ if __name__ == "__main__":
             for direc in pool.imap_unordered(main, dir_list):
                 pass
     
+    cons_dat.main(dir_list)
     
 
 
