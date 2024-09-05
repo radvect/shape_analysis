@@ -62,10 +62,10 @@ def main(dir_list):
             if len(indices)>=5 and ROI_dict[ROI]['Children']==[] and ROI_dict[ROI]['Parent']=='':
                 good_masks = isolated_mask(indices, main_dict, main_list)
                 if good_masks :
-                    position = np.array([list(main_dict[main_list[id][2]]['centroid'][main_list[id][3]-1]) for id in indices])
+                    position = np.array([list(main_dict[main_list[id][2]]['repositionned_centroid'][main_list[id][3]-1]) for id in indices])
                     time = np.array([main_dict[main_list[id][2]]['time'] for id in indices])
                     area =  [int(main_dict[main_list[id][2]]['area'][main_list[id][3]-1]) for id in indices]
-                    outlines = [main_dict[main_list[id][2]]['outlines'][main_list[id][3]-1] for id in indices]
+                    outlines = [main_dict[main_list[id][2]]['repositionned_outlines'][main_list[id][3]-1] for id in indices]
                     var_area = np.array([area[i+1]/area[i] for i in range(len(area)-1)])
                     area =  np.array(area)
 
@@ -90,11 +90,12 @@ def main(dir_list):
         
     
 if __name__ == "__main__":
-    dir_list = ['July6_plate1_xy02/', 'July6_plate1_xy05/', 'July6_plate1_xy06/',
-                'July7_plate1_xy01/', 'July7_plate1_xy02/', 'July7_plate1_xy03/', 'July7_plate1_xy04/', 'July7_plate1_xy05/', 'July7_plate1_xy06/', 'July7_plate1_xy07/', 'July7_plate1_xy08/', 'July7_plate1_xy09/',
-                'July8_plate1_xy01/', 'July8_plate1_xy02/', 'July8_plate1_xy04/',
-                'July13_plate1_xy02 repositioned/', 'July13_plate1_xy05 repositioned/',  'July13_plate1_xy08/',  'July13_plate1_xy09/',  'July13_plate1_xy10/', 'July13_plate1_xy12/',
-                'July15_plate1_xy01/', 'July15_plate1_xy02/', 'July15_plate1_xy03/']
+    dir_list = os.listdir('../data/')
+    # dir_list = ['July6_plate1_xy02/', 'July6_plate1_xy05/', 'July6_plate1_xy06/',
+    #             'July7_plate1_xy01/', 'July7_plate1_xy02/', 'July7_plate1_xy03/', 'July7_plate1_xy04/', 'July7_plate1_xy05/', 'July7_plate1_xy06/', 'July7_plate1_xy07/', 'July7_plate1_xy08/', 'July7_plate1_xy09/',
+    #             'July8_plate1_xy01/', 'July8_plate1_xy02/', 'July8_plate1_xy04/',
+    #             'July13_plate1_xy02 repositioned/', 'July13_plate1_xy05 repositioned/',  'July13_plate1_xy08/',  'July13_plate1_xy09/',  'July13_plate1_xy10/', 'July13_plate1_xy12/',
+    #             'July15_plate1_xy01/', 'July15_plate1_xy02/', 'July15_plate1_xy03/']
     main(dir_list)
     
     

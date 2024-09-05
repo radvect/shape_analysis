@@ -33,7 +33,7 @@ def motility_traj(direcs,plot=True,ret=True):
         for ROI in ROI_dict:
             indices = ROI_dict[ROI]['Mask IDs']
             if len(indices)>=5 and ROI_dict[ROI]['Children']==[] and ROI_dict[ROI]['Parent']=='':
-                position = np.array([list(main_dict[main_list[id][2]]['centroid'][main_list[id][3]-1]) for id in indices])
+                position = np.array([list(main_dict[main_list[id][2]]['repositionned_centroid'][main_list[id][3]-1]) for id in indices])
                 time = np.array([main_dict[main_list[id][2]]['time'] for id in indices])
                 area =  [int(main_dict[main_list[id][2]]['area'][main_list[id][3]-1]) for id in indices]
                 var_area = np.array([area[i+1]/area[i] for i in range(len(area)-1)])
@@ -103,16 +103,17 @@ def stats(direcs):
     areas =[]
     for dir in direcs:
         traj, area = motility_traj([dir],plot=False)
-        distribution.append(np.concatenate(traj))
-        
-        for i,elem in enumerate(traj):
-            veloc = np.divide(np.linalg.norm(elem[1:,:-1]-elem[:-1,:-1] ,axis=1),elem[1:,2]-elem[:-1,2])
-            speed.append(np.column_stack((veloc,elem[:-1,2])))
-            speed_vs_area.append(np.column_stack((veloc,area[i][:-1,0])))
-            veloc = np.divide(area[i][1:,0]-area[i][:-1,0],area[i][1:,1]-area[i][:-1,1])
-            area_growth.append(np.column_stack((veloc,area[i][:-1,1])))
-        
-        areas.append(np.concatenate(area))
+        if traj !=[]:
+            distribution.append(np.concatenate(traj))
+            
+            for i,elem in enumerate(traj):
+                veloc = np.divide(np.linalg.norm(elem[1:,:-1]-elem[:-1,:-1] ,axis=1),elem[1:,2]-elem[:-1,2])
+                speed.append(np.column_stack((veloc,elem[:-1,2])))
+                speed_vs_area.append(np.column_stack((veloc,area[i][:-1,0])))
+                veloc = np.divide(area[i][1:,0]-area[i][:-1,0],area[i][1:,1]-area[i][:-1,1])
+                area_growth.append(np.column_stack((veloc,area[i][:-1,1])))
+            
+            areas.append(np.concatenate(area))
 
     speed_vs_area = np.concatenate(speed_vs_area)
     areas = np.concatenate(areas)
@@ -295,21 +296,24 @@ def superdiff_parameters_log(MSD):
     
     return alpha, beta, MSD[:,1]
     
-    
-    
-if __name__ == "__main__":
-    
-    dir_list=os.listdir('results')
+def main():
     datasets = [['July6_plate1_xy02', 'July6_plate1_xy05', 'July6_plate1_xy06'],
                 ['July7_plate1_xy01', 'July7_plate1_xy02', 'July7_plate1_xy03', 'July7_plate1_xy04', 'July7_plate1_xy05', 'July7_plate1_xy06', 'July7_plate1_xy07', 'July7_plate1_xy08', 'July7_plate1_xy09'],
                 ['July8_plate1_xy01', 'July8_plate1_xy02', 'July8_plate1_xy04'],
-                ['July13_plate1_xy02 repositioned', 'July13_plate1_xy05 repositioned',  'July13_plate1_xy08',  'July13_plate1_xy09',  'July13_plate1_xy10', 'July13_plate1_xy12'],
+                ['July13_plate1_xy02 repositioned', 'July13_plate1_xy03', 'July13_plate1_xy05 repositioned', 'July13_plate1_xy07', 'July13_plate1_xy08',  'July13_plate1_xy09',  'July13_plate1_xy10', 'July13_plate1_xy11' , 'July13_plate1_xy12'],
+                ['July14_plate1_xy01',  'July14_plate1_xy02',  'July14_plate1_xy03', 'July14_plate1_xy05'],
                 ['July15_plate1_xy01', 'July15_plate1_xy02', 'July15_plate1_xy03']]
     for elem in datasets:
+        
         motility_traj(elem)
         stats(elem)
         plt.close('all')
+    
+if __name__ == "__main__":
+    # main()
+
+    elem = ['July13_plate1_xy02 repositioned', 'July13_plate1_xy03', 'July13_plate1_xy05 repositioned', 'July13_plate1_xy07', 'July13_plate1_xy08',  'July13_plate1_xy09',  'July13_plate1_xy10', 'July13_plate1_xy11' , 'July13_plate1_xy12']
+    motility_traj(elem)
+    stats(elem)
+    plt.close('all') 
         
-        
-# problem  'July13_plate1_xy03' time 7-8 'July13_plate1_xy07' time 7-8 'July13_plate1_xy11' time 7-8
-# problem 'July14_plate1_xy01' time 54 - 55  'July14_plate1_xy02' time 34 - 35  'July14_plate1_xy03' time 54 - 55 'July14_plate1_xy05' time 54 - 55

@@ -10,10 +10,11 @@ Created on Fri Oct 21 11:18:29 2022
 
 import os
 import cv2
+from copy import deepcopy
 import numpy as np
 from numba import njit
 import tqdm
-from cellpose import utils, io, models
+from cellpose import utils, io, models, denoise
 from skimage.morphology import skeletonize, thin
 import re
 from shutil import rmtree #erasing a whole directory
@@ -57,7 +58,7 @@ from PIL import Image
 # =============================================================================
 
 
-Directory= "July6_plate1_xy02/"  #the directory you chose to work on    
+Directory= "July6_plate1_xy02"  #the directory you chose to work on    
 # different type of datassets with their cropping parameter
 
 
@@ -124,7 +125,7 @@ def renorm_img(img):
     
     
 #%%
-def run_cell_simple(data,mod,chan,dia,thres,celp,seg,gpuval=True):
+def run_cell_simple(data,mod,chan,dia,thres,celp,seg,denoise_mod,gpuval=True):
     if os.path.exists(seg):
         for file in os.listdir(seg):
             os.remove(os.path.join(seg, file))
@@ -132,22 +133,22 @@ def run_cell_simple(data,mod,chan,dia,thres,celp,seg,gpuval=True):
         os.makedirs(seg)
     listdir=os.listdir(data)
     for i in tqdm.trange(len(listdir)):
-        img=np.array(Image.open(data+listdir[i]))[:,:,1]
+        img=np.array(Image.open(os.path.join(data, listdir[i])))[:,:,1]
         if gpuval:
             try:
                 # Specify that the cytoplasm Cellpose model for the segmentation. 
-                model = models.Cellpose(gpu=True, model_type=mod)
+                model = denoise.CellposeDenoiseModel(gpu=True, model_type=mod, restore_type=denoise_mod)
                 masks, flows, st, diams = model.eval(img, diameter = dia, channels=chan, flow_threshold = thres, cellprob_threshold=celp)
             except:
-                model = models.Cellpose(gpu=False, model_type=mod)
+                model = denoise.CellposeDenoiseModel(gpu=False, model_type=mod, restore_type=denoise_mod)
                 masks, flows, st, diams = model.eval(img, diameter = dia, channels=chan, flow_threshold = thres, cellprob_threshold=celp)
         else :
-            model = models.Cellpose(gpu=False, model_type=mod)
+            model = denoise.CellposeDenoiseModel(gpu=False, model_type=mod, restore_type=denoise_mod)
             masks, flows, st, diams = model.eval(img, diameter = dia, channels=chan, flow_threshold = thres, cellprob_threshold=celp)
         io.masks_flows_to_seg(img, masks, flows, os.path.join(seg+listdir[i][:-4]), channels=chan, diams=diams)
         
         
-def run_cell_boundary(data,mod,chan,dia,flow_small,flow_big,celp_small,celp_big,seg,surfcomthres,boundarythres,gpuval=True):
+def run_cell_boundary(data,mod,chan,dia,flow_small,flow_big,celp_small,celp_big,seg,surfcomthres,boundarythres,denoise_mod, gpuval=True):
     if os.path.exists(seg):
         for file in os.listdir(seg):
             os.remove(os.path.join(seg, file))
@@ -163,26 +164,26 @@ def run_cell_boundary(data,mod,chan,dia,flow_small,flow_big,celp_small,celp_big,
         if gpuval:
             try:
                 # Specify that the cytoplasm Cellpose model for the segmentation. 
-                model = models.Cellpose(gpu=True, model_type=mod)
+                model = denoise.CellposeDenoiseModel(gpu=True, model_type=mod, restore_type=denoise_mod)
                 masks1, flows1, st1, diams1 = model.eval(img, diameter = dia, channels=chan, flow_threshold = flow_small, cellprob_threshold=celp_small)
             except:
-                model = models.Cellpose(gpu=False, model_type=mod)
+                model = denoise.CellposeDenoiseModel(gpu=False, model_type=mod, restore_type=denoise_mod)
                 masks1, flows1, st1, diams1 = model.eval(img, diameter = dia, channels=chan, flow_threshold = flow_small, cellprob_threshold=celp_small)
         else :
-            model = models.Cellpose(gpu=False, model_type=mod)
+            model = denoise.CellposeDenoiseModel(gpu=False, model_type=mod, restore_type=denoise_mod)
             masks1, flows1, st1, diams1 = model.eval(img, diameter = dia, channels=chan, flow_threshold = flow_small, cellprob_threshold=celp_small)
             
             
         if gpuval:
             try:
                 # Specify that the cytoplasm Cellpose model for the segmentation. 
-                model = models.Cellpose(gpu=True, model_type=mod)
+                model = denoise.CellposeDenoiseModel(gpu=True, model_type=mod, restore_type=denoise_mod)
                 masks2, flows2, st2, diams2 = model.eval(img, diameter = dia, channels=chan, flow_threshold = flow_big, cellprob_threshold=celp_big)
             except:
-                model = models.Cellpose(gpu=False, model_type=mod)
+                model = denoise.CellposeDenoiseModel(gpu=False, model_type=mod, restore_type=denoise_mod)
                 masks2, flows2, st2, diams2 = model.eval(img, diameter = dia, channels=chan, flow_threshold = flow_big, cellprob_threshold=celp_big)
         else :
-            model = models.Cellpose(gpu=False, model_type=mod)
+            model = denoise.CellposeDenoiseModel(gpu=False, model_type=mod, restore_type=denoise_mod)
             masks2, flows2, st2, diams2 = model.eval(img, diameter = dia, channels=chan, flow_threshold = flow_big, cellprob_threshold=celp_big)
         
         masking_masks=masks2==0
@@ -237,7 +238,7 @@ def download_dict_logs_only(mydata,dir,segmentspath,saving=True,savingpath='dict
             
             
             dic[fichier]['time']=t      #time in minutes after the beginning of the experiment
-            dic[fichier]['adress']=dir_im+fichier+'.tif'
+            dic[fichier]['adress']= os.path.join(dir_im, fichier+'.tif')
             dic[fichier]['masks']=dat['masks']
             dic[fichier]['outlines']=utils.outlines_list(dat['masks'], multiprocessing=False)
             dic[fichier]['angle']=0
@@ -328,6 +329,7 @@ def clean_masks(frac_mask,dic,saving=False,savingpath='dict'):
                 
         #update the outlines
         dic[fichier]['outlines']=newoutlines
+        dic[fichier]['repositionned_outlines']=deepcopy(newoutlines)
         #new value of the area and the centroid
         area2=np.zeros(non_defect_count).astype(np.int32)
         centroid2=np.zeros((non_defect_count,2),dtype=np.int32)
@@ -343,6 +345,7 @@ def clean_masks(frac_mask,dic,saving=False,savingpath='dict'):
         
         dic[fichier]['area']=area2
         dic[fichier]['centroid']=centroid2
+        dic[fichier]['repositionned_centroid']=np.array(centroid2)
         #constructing the main centroid
         if sum(area2)>0:
             main_centroid0=0
@@ -540,6 +543,7 @@ def run_one_dataset_logs_only(dic):
     cel_flow_threshold_big = 0.3
     cel_cellprob_threshold_big=-0.5#oldparam : 0.0 0.4
     cell_gpu=True
+    denoise_mod = "denoise_cyto3"
     
     #erasing small masks that have a smaller relative size :
     ratio_erasing_masks=0.2
@@ -554,8 +558,8 @@ def run_one_dataset_logs_only(dic):
     
     print("run_cel",step)
     step+=1
-    run_cell_simple(my_data+dic,cel_model_type,cel_channels,cel_diameter_param,cel_flow_threshold,cel_cellprob_threshold,segments_path,gpuval=cell_gpu)
-    # run_cell_boundary(my_data+dic,cel_model_type,cel_channels,cel_diameter_param,cel_flow_threshold_small,cel_flow_threshold_big,cel_cellprob_threshold_small,cel_cellprob_threshold_big,segments_path,surf_com_thres,boundary_thres,gpuval=cell_gpu)
+    run_cell_simple(os.path.join(my_data, dic),cel_model_type,cel_channels,cel_diameter_param,cel_flow_threshold,cel_cellprob_threshold,segments_path,denoise_mod, gpuval=cell_gpu)
+    # run_cell_boundary(my_data+dic,cel_model_type,cel_channels,cel_diameter_param,cel_flow_threshold_small,cel_flow_threshold_big,cel_cellprob_threshold_small,cel_cellprob_threshold_big,segments_path,surf_com_thres,boundary_thres,denoise_mod, gpuval=cell_gpu)
 
     print("download_dict",step)
     step+=1
@@ -590,7 +594,115 @@ def run_one_dataset_logs_only(dic):
     
     
     
+def run_cellpose(dic):
     
+    my_data='../data/'
+    #path of dir
+    #directory with the usefull information of the logs, None if there is no.
+
+    #Temporary directories
+    #directory for output data from cellpose 
+    segments_path = os.path.join(dic,"cellpose_output/")
+
+
+    #Outputs
+    #directory of the processed images (every image has the same pixel size and same zoom)
+    #Saving path for the dictionnary
+    if os.path.exists(dic):
+        for file in os.listdir(dic):
+            rmtree(os.path.join(dic, file))
+    else:
+        os.makedirs(dic)
+    
+
+
+    
+    ''' Parameters'''
+
+    
+    #cellpose parameters
+    
+    cel_model_type='cyto2'# 'cyto''cyto2''nuclei'
+    cel_channels=[0,0]  # define CHANNELS to run segementation on grayscale=0, R=1, G=2, B=3; channels = [cytoplasm, nucleus]; nucleus=0 if no nucleus
+    cel_diameter_param = 85 #120 parameter to adjust the expected size (in pixels) of bacteria. Incease if cellpose detects too small masks, decrease if it don't detects small mask/ fusion them. Should be around 1 
+    cel_flow_threshold = 0.15  #oldparam :0.15   [0.8,0.2]
+    cel_cellprob_threshold=0.95 #oldparam :0.95
+    cel_flow_threshold_small = 0.95
+    cel_cellprob_threshold_small=2
+    cel_flow_threshold_big = 0.3
+    cel_cellprob_threshold_big=-0.5#oldparam : 0.0 0.4
+    cell_gpu=True
+    denoise_mod = "denoise_cyto3"
+    
+    
+    
+    
+    step=0
+    ''''''
+    
+    print("run_cel",step)
+    step+=1
+    run_cell_simple(os.path.join(my_data, dic),cel_model_type,cel_channels,cel_diameter_param,cel_flow_threshold,cel_cellprob_threshold,segments_path,denoise_mod, gpuval=cell_gpu)
+    # run_cell_boundary(my_data+dic,cel_model_type,cel_channels,cel_diameter_param,cel_flow_threshold_small,cel_flow_threshold_big,cel_cellprob_threshold_small,cel_cellprob_threshold_big,segments_path,surf_com_thres,boundary_thres,denoise_mod, gpuval=cell_gpu)
+
+    
+    
+def run_end_preprocess(dic):
+    
+    my_data='../data/'
+    #path of dir
+    #directory with the usefull information of the logs, None if there is no.
+
+    #Temporary directories
+    #directory for output data from cellpose 
+    segments_path = os.path.join(dic,"cellpose_output/")
+
+    saving_path=os.path.join('results',dic,'Main_dictionnary')
+    #dimension and scale of all the final data
+    #dimension and scale of all the final data
+    list_savingpath=os.path.join('results',dic,'masks_list')
+    
+
+
+    
+    ''' Parameters'''
+
+
+    
+    #erasing small masks that have a smaller relative size :
+    ratio_erasing_masks=0.2
+    
+    
+    step=1
+    print("download_dict",step)
+    step+=1
+    main_dict=download_dict_logs_only(my_data,dic,segments_path,saving=True,savingpath=saving_path)
+    
+    # main_dict=np.load(saving_path+'.npz', allow_pickle=True)['arr_0'].item()
+    
+    print("main_parenting",step)
+    step+=1
+    main_parenting(main_dict)
+    
+    print("centroid_area",step)
+    step+=1
+    centroid_area(main_dict)
+
+    print("clean_masks",step)
+    step+=1
+    clean_masks(ratio_erasing_masks, main_dict)
+    
+    print("main_parenting",step)
+    step+=1
+    main_parenting(main_dict) #re-run in case all masks in a frame are erased
+    
+    print("skeletonization",step)
+    step+=1
+    skeletonization(main_dict)
+    
+    print("construction_mask_list",step)
+    step+=1
+    construction_mask_list(main_dict,list_savingpath,saving=True,savingpath=saving_path)
     
 
 
@@ -599,16 +711,6 @@ if __name__ == "__main__":
     '''Running the different functions'''
     
     run_one_dataset_logs_only(Directory)
-    
-    data_dirs = 'results'
-    
-    # for subdir in os.listdir(data_dirs):
-    #     saving_path=os.path.join(data_dirs,subdir,'Main_dictionnary.npz')
-    #     main_dict=np.load(saving_path, allow_pickle=True)['arr_0'].item()
-    #     skeletonization(main_dict,saving=True,savingpath=saving_path)
-    
-    # saving_path=os.path.join(data_dirs,Directory,'Main_dictionnary.npz')
-    # main_dict=np.load(saving_path, allow_pickle=True)['arr_0'].item()
-    # skeletonization(main_dict,saving=True,savingpath=saving_path)
+ 
         
 

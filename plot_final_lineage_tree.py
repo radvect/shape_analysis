@@ -7,16 +7,16 @@ Created on Wed May 10 14:34:34 2023
 """
 import re
 import os
+
 import numpy as np
 import matplotlib.pyplot as plt
-from cellpose import plot
+from cellpose import plot, utils
+from PIL import Image
+from multiprocessing import Pool
+
 import processing as pr
 import final_graph as fg
 import extract_individuals as exi
-from PIL import Image
-from cellpose import utils
-from multiprocessing import Pool
-import construct_dataset as cons_dat
 
 
 Directory= "July6_plate1_xy02/" 
@@ -250,7 +250,7 @@ def plot_image_lineage_tree(ROI_dic,masks_list,dic,maskcol,indexlist,directory,s
             
         #plot the displacement of the centroid between two images
         plt.title(f'{directory} at time {dic[fichier]["time"]}')
-        plt.savefig(newdirect+fichier+'.jpg', format='jpg', dpi=400)
+        plt.savefig(os.path.join(newdirect, fichier+'.jpg'), format='jpg', dpi=400)
         if show:
             plt.show()
         else:
@@ -301,7 +301,7 @@ def plot_image_lineage_tree(ROI_dic,masks_list,dic,maskcol,indexlist,directory,s
     main_centroid=dic[fichier]['main_centroid']
     plt.plot(main_centroid[1], main_centroid[0], color='w',marker='o')
     plt.title(f'{directory} at time {dic[fichier]["time"]}')
-    plt.savefig(newdirect+fichier+'.jpg', format='jpg', dpi=400)
+    plt.savefig(os.path.join(newdirect, fichier+'.jpg'), format='jpg', dpi=400)
     #plot the displacement of the centroid between two images
     if show:
         plt.show()
@@ -483,7 +483,7 @@ def run_whole_lineage_tree(direc,thres=final_thresh,min_number=min_len_ROI,thres
     os.remove(os.path.join(path, boolmatname))
     os.remove(os.path.join(path, linkmatname))
     
-    
+ 
 def main(direc):
     print(direc)
     pr.run_one_dataset_logs_only(direc)
@@ -491,23 +491,11 @@ def main(direc):
     run_whole_lineage_tree(direc, show=False)
 
 
-    
+
     
 if __name__ == "__main__":
-    
-    dir_list = ['July6_plate1_xy02/', 'July6_plate1_xy05/', 'July6_plate1_xy06/',
-            'July7_plate1_xy01/', 'July7_plate1_xy02/', 'July7_plate1_xy03/', 'July7_plate1_xy04/', 'July7_plate1_xy05/', 'July7_plate1_xy06/', 'July7_plate1_xy07/', 'July7_plate1_xy08/', 'July7_plate1_xy09/',
-            'July8_plate1_xy01/', 'July8_plate1_xy02/', 'July8_plate1_xy04/',
-            'July13_plate1_xy02 repositioned/', 'July13_plate1_xy05 repositioned/',  'July13_plate1_xy08/',  'July13_plate1_xy09/',  'July13_plate1_xy10/', 'July13_plate1_xy12/',
-            'July15_plate1_xy01/', 'July15_plate1_xy02/', 'July15_plate1_xy03/']
-    with Pool(processes=8) as pool:
-            for direc in pool.imap_unordered(main, dir_list):
-                pass
-    
-    cons_dat.main(dir_list)
-    
-
-
-
+    Directory = "July6_plate1_xy02" 
+    main(Directory)
+   
 
     
