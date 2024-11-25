@@ -11,13 +11,15 @@ def plot_cell(n):
     
     plt.figure()
     ax = plt.axes(projection='3d')
-    for frame in cell:
+    tot_len = len(cell)
+    colors = plt.cm.viridis(np.linspace(0,1,tot_len))
+    for i,frame in enumerate(cell):
         time = np.load(os.path.join(cell_path, frame, 'time.npy'))
         outline = np.load(os.path.join(cell_path, frame, 'outline.npy'))
         centroid = np.load(os.path.join(cell_path, frame, 'centroid.npy'))
-        
-        ax.plot3D(outline[:,0],outline[:,1], time*np.ones(len(outline[:,1])), c='r' )
-        ax.scatter(centroid[0], centroid[1], time, c = 'k')
+        print(outline, time)
+        ax.plot3D(outline[:,0],outline[:,1], time*np.ones(len(outline[:,1])), c=colors[i] )
+        # ax.scatter(centroid[0], centroid[1], time, c = 'k')
     plt.show()
         
     
