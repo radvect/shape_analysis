@@ -44,6 +44,7 @@ def conformal_representation(cell_folder ,
     all_outlines_cMCF_topography = []
     all_outlines_curvature = []
     fin_times = []
+    fin_centr = []
     
     for ttt in np.arange(len(times))[:]:
         
@@ -54,9 +55,8 @@ def conformal_representation(cell_folder ,
         outline = np.load(outline_ttt_file)
         all_outlines.append(outline)
         fin_times.append(np.load(time_ttt_file))
-        
         centroid = np.load(centroid_ttt_file)
-        
+        fin_centr.append(centroid)
         # evolve the contour. 
         outline_input = outline.copy()
         _,_, outline_input_curvature = unwrap2D_fns.curvature_splines(outline_input[:,1], 
@@ -66,7 +66,7 @@ def conformal_representation(cell_folder ,
         all_outlines_curvature.append(outline_input_curvature)
         outline_input_curvature_norm = np.nanmean(np.linalg.norm(outline_input-centroid[None,:], axis=-1), axis=0)/2. * outline_input_curvature
 
-        print(outline_input_curvature_norm.min(),outline_input_curvature_norm.max(), np.nanmean(np.abs(outline_input_curvature_norm)))
+        # print(outline_input_curvature_norm.min(),outline_input_curvature_norm.max(), np.nanmean(np.abs(outline_input_curvature_norm)))
                     
         # =============================================================================
         #            Find reference
@@ -154,66 +154,201 @@ def conformal_representation(cell_folder ,
         all_outlines_cMCF_topography.append(topography_coords_disk)
         
         
-    return all_outlines, all_outlines_cMCF, all_outlines_cMCF_topography, all_outlines_curvature, disk_coords, fin_times
+    return all_outlines, all_outlines_cMCF, all_outlines_cMCF_topography, all_outlines_curvature, disk_coords, np.array(fin_centr), np.array(fin_times)
 
 
 
 
 
 
-def max_protusion_plot(all_outlines, all_outlines_cMCF_topography, all_outlines_curvature, fin_times):
-    plt.figure()
-    ax = plt.axes(projection='3d')
-    tot_len = len(all_outlines_cMCF_topography) #10
-    colors = plt.cm.viridis(np.linspace(0,1,tot_len))
+def max_protusion_plot(direct):
+    
+    all_cell_folders = [os.path.join(direct, ff) for ff in os.listdir(direct)]
+    for cell_folder_ii in np.arange(len(all_cell_folders)):
+        all_outlines, _, all_outlines_cMCF_topography, all_outlines_curvature, _, _, fin_times = conformal_representation(all_cell_folders[cell_folder_ii])
+     
+        plt.figure()
+        plt.title(f'Shape evolution, cell {cell_folder_ii}')
+        ax = plt.axes(projection='3d')
+        tot_len = len(all_outlines_cMCF_topography) #10
+        colors = plt.cm.viridis(np.linspace(0,1,tot_len))
+        max_top = []
+        max_curv = []
 
-    for jj in np.arange(tot_len) :
-        topography_coords_disk = all_outlines_cMCF_topography[jj]
-        outline = all_outlines[jj]
-        time = fin_times[jj]
-        curv = all_outlines_curvature[jj]
-        index = np.argmax(topography_coords_disk [:,0]**2+topography_coords_disk [:,1]**2)
-        index_curvature = np.argmin(curv)
+        for jj in np.arange(tot_len) :
+            topography_coords_disk = all_outlines_cMCF_topography[jj]
+            outline = all_outlines[jj]
+            time = fin_times[jj]
+            curv = all_outlines_curvature[jj]
+            index = np.argmax(topography_coords_disk [:,0]**2+topography_coords_disk [:,1]**2)
+            index_curvature = np.argmin(curv)
 
-        ax.plot3D(outline[:,0],outline[:,1], time*np.ones(len(outline[:,1])), c=colors[jj] )
-        # ax.scatter(outline[index,0], 
-        #             outline[index,1], time, c='k')
-        ax.scatter(outline[index_curvature,0], 
-                    outline[index_curvature,1], time, c='r')
-        
-    plt.figure()
-    ax = plt.axes(projection='3d')
-    tot_len = len(all_outlines_cMCF_topography) #10
-    colors = plt.cm.viridis(np.linspace(0,1,tot_len))
-
-    for jj in np.arange(tot_len) :
-        topography_coords_disk = all_outlines_cMCF_topography[jj]
-        outline = all_outlines[jj]
-        time = fin_times[jj]
-        curv = all_outlines_curvature[jj]
-        index = np.argmax(topography_coords_disk [:,0]**2+topography_coords_disk [:,1]**2)
-        index_curvature = np.argmin(curv)
-
-        ax.plot3D(topography_coords_disk[:,0],topography_coords_disk[:,1], time*np.ones(len(outline[:,1])), c=colors[jj] )
-    #     ax.scatter(topography_coords_disk[index,0], 
-    #                 topography_coords_disk[index,1], time, c='k')
-    #     ax.scatter(topography_coords_disk[index_curvature,0], 
-    #                 topography_coords_disk[index_curvature,1], time, c='r')
-    plt.show()
+            ax.plot3D(outline[:,0],outline[:,1], time*np.ones(len(outline[:,1])), c=colors[jj] )
+            max_top.append([outline[index][0], outline[index][1], time])
+            max_curv.append([outline[index_curvature][0], outline[index_curvature][1], time])
             
+        max_top = np.array(max_top)
+        max_curv = np.array(max_curv)   
+        
+        ax.scatter(max_top[:,0], 
+                        max_top[:,1], max_top[:,2], c='k', label='max topo height')
+        ax.scatter(max_curv[:,0], 
+                        max_curv[:,1], max_curv[:,2], c='r', label='max curvature')
+        ax.legend()
+        
+            
+        plt.figure()
+        plt.title(f'Topographical representation, cell {cell_folder_ii}')
+        ax = plt.axes(projection='3d')
+        tot_len = len(all_outlines_cMCF_topography) #10
+        colors = plt.cm.viridis(np.linspace(0,1,tot_len))
+        max_top = []
+        max_curv = []
+        
+        for jj in np.arange(tot_len) :
+            topography_coords_disk = all_outlines_cMCF_topography[jj]
+            outline = all_outlines[jj]
+            time = fin_times[jj]
+            curv = all_outlines_curvature[jj]
+            index = np.argmax(topography_coords_disk [:,0]**2+topography_coords_disk [:,1]**2)
+            index_curvature = np.argmin(curv)
 
+            ax.plot3D(topography_coords_disk[:,0],topography_coords_disk[:,1], time*np.ones(len(outline[:,1])), c=colors[jj] )
+            max_top.append([topography_coords_disk[index][0], topography_coords_disk[index][1], time])
+            max_curv.append([topography_coords_disk[index_curvature][0], topography_coords_disk[index_curvature][1], time])
+            
+        max_top = np.array(max_top)
+        max_curv = np.array(max_curv)   
+        
+        ax.scatter(max_top[:,0], 
+                        max_top[:,1], max_top[:,2], c='k', label='max topo height')
+        ax.scatter(max_curv[:,0], 
+                        max_curv[:,1], max_curv[:,2], c='r', label='max curvature')
+        ax.legend()
+        plt.show()
+            
+def _stats_max_protusions(cell_folder, smoothing = True, smooth_time = 2):
+    all_outlines, _, all_outlines_cMCF_topography, all_outlines_curvature, _, fin_centr, fin_times = conformal_representation(cell_folder)
+    tot_len = len(all_outlines)
+    vec_topo = []
+    vec_curv = []
+    val_curv = []
+    for jj in np.arange(tot_len)[1:]:
+        
+        topography_coords_disk = all_outlines_cMCF_topography[jj]
+        outline = all_outlines[jj]
+        curv = all_outlines_curvature[jj]
+        centr = fin_centr[jj]
+        
+        index = np.argmax(topography_coords_disk [:,0]**2+topography_coords_disk [:,1]**2)
+        index_curv = np.argmin(curv)
+        
+        vec_topo.append(outline[index] - centr)
+        vec_curv.append(outline[index_curv] - centr)
+        val_curv.append(curv[index_curv])
+        
+    displacement = fin_centr[1:]- fin_centr[:-1]
+    velocity = np.zeros(np.shape(displacement))
+    if smoothing:
+        
+        for jj, val_jj in enumerate(displacement):
+            mask = np.logical_and(fin_times[1:]>= fin_times[jj] - smooth_time, fin_times[1:]<= fin_times[jj] + smooth_time)
+            if np.sum(mask) >1 :
+                time_var = fin_times[1:] - fin_times[:-1]
+                velocity[jj] = (np.sum(displacement[mask])) / (np.sum(time_var[mask]))
+            else:
+                velocity[jj] = val_jj / (fin_times[jj+1] - fin_times[jj])
+            
+    else :
+        velocity[:,0] = displacement[:,0] / (fin_times[1:]-fin_times[:-1])
+        velocity[:,1] = displacement[:,1] / (fin_times[1:]-fin_times[:-1])
+        
 
+    return velocity, vec_topo, vec_curv, val_curv
 
+def stats_max_protusions(direct):
+    from multiprocessing import Pool
+    res_velo = []
+    res_topo = [] 
+    res_curv = []
+    val_curv = []
+    all_cell_folders = [os.path.join(direct, ff) for ff in os.listdir(direct)]
+    
+    
+    with Pool(processes=8) as pool:
+            for _velo, _topo, _curv, _vcurv in pool.imap_unordered(_stats_max_protusions, all_cell_folders):
+                val_curv.extend(_vcurv)
+                res_velo.extend(_velo)
+                res_topo.extend(_topo)
+                res_curv.extend(_curv)
+            
+    res_curv = np.array(res_curv)
+    res_velo = np.array(res_velo)
+    res_topo = np.array(res_topo)
+    val_curv = np.array(val_curv)
+    
+    plt.figure()
+    plt.xlabel('Max curvature')
+    plt.ylabel('Velocity norm')
+    vel_norm = (res_velo[:,0]**2+res_velo[:,1]**2)**0.5
+    plt.scatter(-val_curv, vel_norm)
+    
+    plt.figure()
+    bin_num = 20
+    bottom = 400
 
+    theta_topo = np.arctan2(res_topo[:,0], res_topo[:,1])
+    theta_velo = np.arctan2(res_velo[:,0], res_velo[:,1])
+    theta = (theta_topo - theta_velo ) % (2 * np.pi)
+    
+    hist = np.histogram(theta, bins=bin_num, range=(0,2 * np.pi))
+    width = (2*np.pi) / bin_num
+
+    ax = plt.subplot(111, polar=True)
+    ax.set_title('Angle of max protusion with the displacement, topology')
+    bars = ax.bar((hist[1][:-1]+hist[1][1:])/2, hist[0], width=width, bottom=bottom)
+
+    # Use custom colors and opacity
+    max_val = np.max(hist[0])
+    for r, bar in zip(hist[0], bars):
+        bar.set_facecolor(plt.cm.jet(r / max_val))
+        bar.set_alpha(0.8)
+        
+    
+    plt.figure()
+    bin_num = 20
+    bottom = 400
+
+    theta_curv = np.arctan2(res_curv[:,0], res_curv[:,1])
+    theta_velo = np.arctan2(res_velo[:,0], res_velo[:,1])
+    theta = (theta_curv - theta_velo) % (2 * np.pi)
+    
+    hist = np.histogram(theta, bins=bin_num, range=(0,2 * np.pi))
+    width = (2*np.pi) / bin_num
+
+    ax = plt.subplot(111, polar=True)
+    ax.set_title('Angle of max protusion with the displacement, curvature')
+    bars = ax.bar((hist[1][:-1]+hist[1][1:])/2, hist[0], width=width, bottom=bottom)
+
+    # Use custom colors and opacity
+    max_val = np.max(hist[0])
+    for r, bar in zip(hist[0], bars):
+        bar.set_facecolor(plt.cm.jet(r / max_val))
+        bar.set_alpha(0.8)
+
+    
+    plt.show()
 
 
 
 
 if __name__ == '__main__':
     glob_folder = 'cells'
-    all_cell_folders = [os.path.join(glob_folder, ff) for ff in os.listdir(glob_folder)]
-    for cell_folder_ii in np.arange(len(all_cell_folders)):
-        outlines, _, outlines_topo, curvature, _, times = conformal_representation(all_cell_folders[cell_folder_ii])
-        print(curvature)
-        max_protusion_plot(outlines, outlines_topo, curvature, times)
+    
+    # max_protusion_plot(glob_folder)
+    stats_max_protusions(glob_folder)
+    
+    
+
+    
         
