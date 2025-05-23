@@ -1192,388 +1192,212 @@ def smooth_topo(topography_coords_disk):
     topography_coords_disk = smoothed_extended[n:2*n]
 
     return topography_coords_disk
+def save_circle_watershed_evolution_to_pdf(
+    direct: str,
+    cell_number: int,
+    pdf_path: str,
+    initial_critical_height_protrusion: float = 6.1495,
+    initial_critical_height_intrusion: float = 5.0797,
+    critical_curvature: float = 0.0454,
+):
+    """Save one‑page‑per‑frame visualisation of shape/topography evolution.
 
-def save_circle_watershed_evolution_to_pdf(direct, cell_number, pdf_path):
+    The rewritten version avoids any conversion to a pixel grid and does not
+    rely on ``imshow``.  Every panel is plotted directly in the native
+    coordinate system returned by ``conformal_representation``.  Colours are
+    used to indicate protrusions (red) and intrusions (green).  Neutral points
+    are shown in light grey.
+    """
 
-    critical_curvature = 0#0.0454# 0.06
-    critical_height_protrusion = 0#6.1495# 4.
-    critical_height_intrusion =  0#5.0797
-
-
+    # Collect folders for every time point in a reproducible order
     all_cell_folders = [
-        os.path.join(direct, ff) 
-        for ff in sorted(os.listdir(direct), key=lambda x: int(x.split('_')[1]) if '_' in x and x.split('_')[1].isdigit() else 0)
+        os.path.join(direct, ff)
+        for ff in sorted(
+            os.listdir(direct),
+            key=lambda x: int(x.split("_")[1]) if "_" in x and x.split("_")[1].isdigit() else 0,
+        )
     ]
 
-    image_size = 300
-    #print(all_cell_folders)
-    all_outlines, _, all_outlines_cMCF_topography, all_outlines_curvature, disk_coors, centr, fin_times = conformal_representation(all_cell_folders[cell_number])
+    (
+        all_outlines,
+        _,
+        all_outlines_cMCF_topography,
+        all_outlines_curvature,
+        disk_coors,
+        centr,
+        fin_times,
+    ) = conformal_representation(all_cell_folders[cell_number])
 
-
+    # Shift vectors between consecutive frames (labs coordinates)
     shifts = get_shift(all_outlines, centr, fin_times)
 
+    # Estimate nucleus/cell core radius in *native* coordinates (used for thresholds)
+    disk_center = np.mean(disk_coors, axis=0)
+    disk_radius = np.mean(np.linalg.norm(disk_coors - disk_center, axis=1))
+    # Maintain historical convention where 50 px corresponded to this reference radius
+    scale_factor = disk_radius / 50.0
+    critical_height_protrusion = initial_critical_height_protrusion * scale_factor
+    critical_height_intrusion = initial_critical_height_intrusion * scale_factor
+
     with PdfPages(pdf_path) as pdf:
-        index_from = 0
-        for jj in range(1):#(len(all_outlines)):
-            shift = shifts[jj]
-            outline = all_outlines[jj]
-            topography_coords_disk = all_outlines_cMCF_topography[jj]
-            curvatures = all_outlines_curvature[jj]
-            max_curv = max(curvatures)
-            time = fin_times[jj]
-            ####PICTURES CONFIGURATION####################################################################
-            fig = plt.figure(figsize=(24, 6))
-            ax1 = fig.add_subplot(141)
-            ax2 = fig.add_subplot(142)
-            ax3 = fig.add_subplot(143)
-            ax4 = fig.add_subplot(144)
-            #############################################################################################
+        index_from = 0  # running reference point for orientation
 
+        for jj, (
+            outline,
+            topography_coords_disk,
+            curvatures,
+            shift,
+            time,
+        ) in enumerate(
+            zip(
+                all_outlines,
+                all_outlines_cMCF_topography,
+                all_outlines_curvature,
+                shifts,
+                fin_times,
+            )
+        ):
+            outline = outline.copy()
+            topography_coords_disk = topography_coords_disk.copy()
+            curvatures = curvatures.copy()
 
-
-            ####smoothing topological map
+            # --- Geometry preparation ---------------------------------------------------------
             topography_coords_disk = smooth_topo(topography_coords_disk)
-            ####OP index for alignment
-            index_from = op_index(all_outlines[jj - 1], all_outlines[jj], index_from) if jj > 0 else 0         
-            theta = np.arctan2(topography_coords_disk[index_from][0], topography_coords_disk[index_from][1])
+            if jj > 0:
+                index_from = op_index(all_outlines[jj - 1], outline, index_from)
 
-            ###############################################
-            circle_radius_new = [50, 0]
-            for i in range(2):
-                #outline repicturing
-                min_val = np.min(outline[:, i])
-                max_val = np.max(outline[:, i])
-                relative_margin = 0.05  # 5% от размера
-                margin = relative_margin * image_size
-                scale = image_size - 2 * margin
-                outline[:, i] = (outline[:, i] - min_val) / (max_val - min_val) * scale + margin
+            # Polar angle definition w.r.t. reference vertex
+            theta_ref = np.arctan2(
+                topography_coords_disk[index_from][0] - disk_center[0],
+                topography_coords_disk[index_from][1] - disk_center[1],
+            )
+            theta_topo = np.arctan2(
+                topography_coords_disk[:, 0] - disk_center[0],
+                topography_coords_disk[:, 1] - disk_center[1],
+            )
+            theta_deg = np.degrees((theta_topo - theta_ref) % (2 * np.pi))
 
-                #topo repicturing
-                relative_margin = 0.15
-                margin = relative_margin * image_size
-                scale = image_size - 2 * margin
-                min_val = np.min(disk_coors[:, i])
-                max_val = np.max(disk_coors[:, i])
-                disk_coors[:, i] = (disk_coors[:, i] - min_val) / (max_val - min_val) * scale + margin
-                
-                
-                shift[i] = shift[i] / (max_val - min_val) * scale
-                topography_coords_disk[:, i] = (topography_coords_disk[:, i] - min_val) / (max_val - min_val) * scale + margin
-                circle_radius_new[i] = (circle_radius_new[i] - min_val) / (max_val - min_val) * scale + margin
-                circle_center_new = (image_size/2, image_size/2)
-                
-            circle_radius_new = np.sqrt((circle_radius_new[0]-circle_center_new[0])**2 + (circle_radius_new[1]-circle_center_new[1])**2)
-            print(circle_radius_new)
+            # Radial height of the topography relative to nucleus circle
+            topo_height = (
+                np.linalg.norm(topography_coords_disk - disk_center, axis=1) - disk_radius
+            )
 
-            theta_zero_index = np.arctan2(topography_coords_disk[index_from][0]-circle_center_new[0], topography_coords_disk[index_from][1]-circle_center_new[1])
-            theta_topo = np.arctan2(topography_coords_disk[:, 0]-circle_center_new[0], topography_coords_disk[:, 1]-circle_center_new[1])
-            theta_3 = np.degrees((theta_topo - theta_zero_index) % (2 * np.pi))
+            # FFT spectrum for periodic representation (first 30 modes by default):
+            xf, yf = fft_transformation(theta_deg, topo_height, 30)
 
+            # --- Classification --------------------------------------------------------------
+            protrusion_indices = topo_height > 0
+            intrusion_indices = topo_height < 0
+            color_by_index = np.full((len(topo_height), 3), (0.5, 0.5, 0.5))
+            color_by_index[protrusion_indices] = (1.0, 0.0, 0.0)  # red
+            color_by_index[intrusion_indices] = (0.0, 1.0, 0.0)  # green
 
-            topo_height = np.sqrt((topography_coords_disk[:, 0]-circle_center_new[0])**2 + (topography_coords_disk[:, 1]-circle_center_new[1])**2) - circle_radius_new
-            print(topo_height)
-            theta_3, topo_height = zip(*sorted(zip(theta_3, topo_height)))
-            topo_height = np.array(topo_height)
-
-
-            
-
-            #ax3.plot(theta_3, topo_height, 'b-', linewidth=1, label="Topological Map")
-            ax3.scatter(theta_3, topo_height, label="Topological Map")
-            
-
-            ################FOURIER
-
-            xf, yf = fft_transformation(theta_3, topo_height, 30)
-            plt.figure(figsize=(12, 5))
-
-
-
-            ax4.stem(xf, yf)
-
-
-            #####################################
-
-            image_size_tuple = (300, 300)
-            # topography_coords_disk[:, 0] = (topography_coords_disk[:, 0] + image_size) / 2
-            # topography_coords_disk[:, 1] = (topography_coords_disk[:, 1] + image_size) / 2
-
-            center = np.array([image_size / 2, image_size / 2])
-            print(theta)
-            R = np.array([
-                [np.cos(theta), -np.sin(theta)],
-                [np.sin(theta),  np.cos(theta)]
-            ])
-            rr, cc = polygon(topography_coords_disk[:, 1], topography_coords_disk[:, 0], shape=image_size_tuple)
-            binary_image = np.zeros(image_size_tuple, dtype=np.uint8)
-            binary_image[rr, cc] = 1
-            
-            # ax1.imshow(binary_image)
-            topography_coords_disk = (topography_coords_disk - center) @ R.T + center
-
-            rr, cc = polygon(topography_coords_disk[:, 1], topography_coords_disk[:, 0], shape=image_size_tuple)
-            binary_image = np.zeros(image_size_tuple, dtype=np.uint8)
-            binary_image[rr, cc] = 1
-
-            
-            # ax2.imshow(binary_image)
-            # pdf.savefig(fig)
-            # plt.close(fig)
-            # return 
-        
-
-            #center_topo = np.mean(topography_coords_disk, axis=0)  # (x, y)
-    
-            
-            circle_mask = np.zeros_like(binary_image)
-            print(circle_center_new)
-            rr1, cc1 = disk(circle_center_new, circle_radius_new, shape=image_size_tuple)
-            circle_mask[rr1, cc1] = 1
-
-            protrusions = np.logical_and(binary_image, np.logical_not(circle_mask))
-            intrusions = np.logical_and(np.logical_not(binary_image), circle_mask)
-
-            distance_map_protrusions = gaussian_filter(distance_transform_edt(protrusions), sigma=1.0)
-            distance_map_intrusions = gaussian_filter(distance_transform_edt(intrusions), sigma=1.0)
-
-            local_maxi_protrusions = peak_local_max(distance_map_protrusions, footprint=np.ones((3, 3)), labels=protrusions, min_distance=10)
-            local_maxi_intrusions = peak_local_max(distance_map_intrusions, footprint=np.ones((3, 3)), labels=intrusions, min_distance=10)
-
-            mask_protrusions = np.zeros(distance_map_protrusions.shape, dtype=bool)
-            mask_protrusions[tuple(local_maxi_protrusions.T)] = True
-            markers_protrusions, _ = ndi.label(mask_protrusions)
-
-            mask_intrusions = np.zeros(distance_map_intrusions.shape, dtype=bool)
-            mask_intrusions[tuple(local_maxi_intrusions.T)] = True
-            markers_intrusions, _ = ndi.label(mask_intrusions)
-
-            labels_protrusions = watershed(-distance_map_protrusions, markers_protrusions, mask=protrusions)
-            labels_intrusions = watershed(-distance_map_intrusions, markers_intrusions, mask=intrusions)
-
-            protrusion_indices = []
-            intrusion_indices = []
-            color_by_index = {}
-            rgb_border = np.zeros((image_size_tuple[0], image_size_tuple[1], 3))
-
-            for idx, coord in enumerate(topography_coords_disk):
-                x, y = np.round(coord).astype(int)
-                if 0 <= y < image_size_tuple[0] and 0 <= x < image_size_tuple[1]:
-                    if labels_protrusions[y, x] > 0:
-                        rgb_border[y, x] = [1, 0, 0]
-                        protrusion_indices.append(idx)
-                        color_by_index[idx] = (1.0, 0.0, 0.0)
-                    elif labels_intrusions[y, x] > 0:
-                        rgb_border[y, x] = [0, 1, 0]
-                        intrusion_indices.append(idx)
-                        color_by_index[idx] = (0.0, 1.0, 0.0)
-                    else:
-                        color_by_index[idx] = (1.0, 1.0, 1.0)
-            print(color_by_index)
-            length = len(color_by_index)
-            # stride = 10
-            # changed = True
-            # 
-            
-
-            # while changed:
-            #     changed = False
-            #     color_copy = color_by_index.copy()
-
-            #     for i in range(length):
-            #         #print(jj)
-            #         #print("Keys in color_copy:", list(color_copy.keys()))
-            #         if color_copy[i] == (1.0, 1.0, 1.0):
-            #             prev_idx = (i - 1) % length
-            #             prev_color = color_copy[prev_idx]
-
-            #             for offset in range(1, stride + 1):
-            #                 forward_idx = (i + offset) % length
-            #                 forward_color = color_copy[forward_idx]
-
-            #                 if forward_color != (1.0, 1.0, 1.0):
-            #                     if forward_color == prev_color:
-            #                         for z in range(offset):
-            #                             idx_to_paint = (i + z) % length
-            #                             if color_by_index[idx_to_paint] == (1.0, 1.0, 1.0):
-            #                                 color_by_index[idx_to_paint] = prev_color
-            #                                 changed = True
-            #                     break
-
-
-            # stride = 5
-            # length = len(color_by_index)
-            # color_copy = color_by_index.copy()
-
-            # i = 0
-            # while i < length:
-            #     current_color = color_copy[i]
-                
-            #     if current_color in [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]: 
-            #         segment_length = 0
-
-                   
-            #         while segment_length < length:
-            #             forward_idx = (i + segment_length) % length
-            #             forward_color = color_copy[forward_idx]
-            #             if forward_color == current_color:
-            #                 segment_length += 1
-            #             else:
-            #                 break
-
-            #         if segment_length < stride:
-            #             for j in range(segment_length):
-            #                 idx_to_white = (i + j) % length
-            #                 color_copy[idx_to_white] = (1.0, 1.0, 1.0)
-
-            #         i += segment_length
-            #     else:
-            #         i += 1
-            # color_by_index = color_copy
-
-            # print(color_by_index)
-            criteria_index = {}
-
-            for idx, coord in enumerate(topography_coords_disk):
-                x, y = coord 
-
-
-
-                r = (np.sqrt((x - center[0])**2 + (y - center[1])**2) - circle_radius_new)*2
-                curvature = curvatures[idx]
-
-                if r >= critical_height_protrusion and np.abs(curvature) > np.abs(critical_curvature):
-                    characteristic = "P"
-                elif r <= -critical_height_intrusion and np.abs(curvature) > np.abs(critical_curvature):
-                    characteristic = "I"
+            # Secondary criterion based on curvature thresholds
+            criteria_index = []
+            for r, curv in zip(topo_height, curvatures):
+                if r > critical_height_protrusion and abs(curv) > abs(critical_curvature):
+                    criteria_index.append("P")
+                elif r < -critical_height_intrusion and abs(curv) > abs(critical_curvature):
+                    criteria_index.append("I")
                 else:
-                    characteristic = "N"
+                    criteria_index.append("N")
 
-                criteria_index[idx] = characteristic
+            # --- Plotting --------------------------------------------------------------------
+            fig = plt.figure(figsize=(24, 6))
+            ax1 = fig.add_subplot(141)  # outline & shift
+            ax2 = fig.add_subplot(142)  # coloured boundary & nucleus
+            ax3 = fig.add_subplot(143)  # height vs angle
+            ax4 = fig.add_subplot(144)  # FFT spectrum
 
-            print(f"save ")
-            print("".join(criteria_index.values()))
-            print()
+            # Panel 1 – outline with shift vector
+            ax1.plot(*outline.T, "k-")
+            ax1.scatter(*outline[index_from], color="blue", zorder=5, label="Reference vertex")
+            if np.any(np.array(shift) != 0):
+                center_now = outline.mean(axis=0)
+                ax1.arrow(
+                    center_now[0],
+                    center_now[1],
+                    shift[0] * 1.5,
+                    shift[1] * 1.5,
+                    head_width=0.05 * disk_radius,
+                    length_includes_head=True,
+                    color="blue",
+                    linewidth=1.5,
+                    label="Shift vector",
+                )
+            ax1.set_aspect("equal")
+            ax1.set_title(f"Shape evolution (t = {time:.2f})")
+            ax1.legend(loc="best")
 
-            length = len(color_by_index)
-            color_copy = color_by_index.copy()
-            i = 0
+            # Panel 2 – coloured boundary & nucleus circle
+            ax2.plot(*outline.T, color="black", linewidth=1.2)
+            ax2.scatter(
+                topography_coords_disk[:, 0],
+                topography_coords_disk[:, 1],
+                c=color_by_index,
+                s=12,
+                linewidths=0,
+            )
+            # nucleus circle for reference
+            circle = plt.Circle(disk_center, disk_radius, color="grey", ls="--", fill=False)
+            ax2.add_patch(circle)
+            ax2.scatter(*disk_center, color="k", s=20)
+            ax2.set_aspect("equal")
+            ax2.set_title("Topographical representation")
 
-            while i < length:
-                current_color = color_copy[i]
-
-
-                if current_color in [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]:
-                    segment_indices = []
-                    segment_has_important_criteria = False
-                    segment_length = 0
-
-                    while segment_length < length:
-                        idx = (i + segment_length) % length
-                        if color_copy[idx] == current_color:
-                            segment_indices.append(idx)
-                            if criteria_index.get(idx) in ("P", "I"):
-                                segment_has_important_criteria = True
-                            segment_length += 1
-                        else:
-                            break
-
-                    if not segment_has_important_criteria:
-                        for idx_to_white in segment_indices:
-                            color_copy[idx_to_white] = (1.0, 1.0, 1.0)
-
-                    i += segment_length
-                else:
-                    i += 1
-
-            color_by_index = color_copy
-
-
-            rgb_border = np.ones((image_size_tuple[0], image_size_tuple[1], 3))
-            rgb1 = np.ones((image_size_tuple[0], image_size_tuple[1], 3))
-
-            for idx, color in color_by_index.items():
-                x, y = np.round(topography_coords_disk[idx]).astype(int)
-                if 0 <= y < image_size_tuple[0] and 0 <= x < image_size_tuple[1]:
-                    if color == (1.0, 1.0, 1.0):
-                        color = (0.5, 0.5, 0.5)
-                    rgb_border[y, x] = color
-                    
-
-            for idx, coord in enumerate(disk_coors):
-                x, y = np.round(coord).astype(int)
-                if 0 <= y < image_size_tuple[0] and 0 <= x < image_size_tuple[1]:
-                    rgb_border[y, x] = (0, 0, 0)
-
-            for idx, color in color_by_index.items():
-                x, y = np.round(outline[idx]).astype(int)
-                if color == (1.0, 1.0, 1.0):
-                    color = (0.0, 0.0, 0.0)
-                if 0 <= y < image_size_tuple[0] and 0 <= x < image_size_tuple[1]:
-                    rgb1[y, x] = color
-                    
-
-            center = np.mean(outline, axis=0)
-            if shift[0] == 0.0 and shift[1] == 0.0:
-                ax1.scatter(center[0], center[1], color='blue')
-            else:
-                ax1.arrow(center[0], center[1], shift[0] * 1.5, shift[1] * 1.5,
-                          head_width=1, head_length=1, fc='blue', ec='blue', linewidth=1.5)
-
-            ax1.imshow(rgb1)
-            ax2.imshow(rgb_border)
-
-            ax2.scatter(topography_coords_disk[index_from, 0], topography_coords_disk[index_from, 1], color='blue', s=20, zorder=10)
-            ax1.scatter(outline[index_from, 0], outline[index_from, 1], color='blue', s=20, zorder=10)
-
-            num_protrusions = 0
-            num_intrusions = 0
-            colors = [color_by_index[i] for i in range(length)]
-            for i in range(length):
-                current_color = colors[i]
-                prev_color = colors[(i - 1) % length]
-                if current_color == (1.0, 0.0, 0.0) and prev_color != (1.0, 0.0, 0.0):
-                    num_protrusions += 1
-                if current_color == (0.0, 1.0, 0.0) and prev_color != (0.0, 1.0, 0.0):
-                    num_intrusions += 1
-
-            textstr = f'Protrusions: {num_protrusions}\nIntrusions: {num_intrusions}'
-
-            text_curv = f"Max curvature: {max_curv}"
-            ################
-            ax1.set_title(f"Shape Evolution (t = {time:.2f})")
-            ax2.set_title("Topographical Representation")
-            ax2.text(0.95, 0.05, textstr, transform=ax2.transAxes, fontsize=10,
-                     verticalalignment='bottom', horizontalalignment='right',
-                     bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
-            print(text_curv)
-            ax1.text(0.95, 0.05, text_curv, transform=ax1.transAxes, fontsize=10,
-                verticalalignment='bottom', horizontalalignment='right',
-                bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
-
-            for ax in [ax1, ax2]:
-                ax.tick_params(colors='black')
-                for spine in ax.spines.values():
-                    spine.set_color('black')
-
-            ax3.set_title("Topographical height")
-            ax4.set_title("FFT frequencies analysis")
-            
+            # Panel 3 – radial height vs polar angle
+            ax3.axhline(0, color="k", lw=0.8)
+            ax3.scatter(theta_deg, topo_height, c=color_by_index, s=12)
             ax3.set_xlim(0, 360)
             ax3.set_xticks(np.arange(0, 361, 45))
-            ax3.axhline(y=0.0, color='g', linestyle='-')
-            ax3.set_xlabel('Polar angle (degrees)')
-            ax3.set_ylabel('Topological height')
-            ax3.set_xlabel('Polar angle (degrees)')
-            ax3.set_ylabel('Topological height')
-            ax4.set_xlabel('Frequency FFT')
-            ax4.set_ylim(0, 1)
+            ax3.set_xlabel("Polar angle (°)")
+            ax3.set_ylabel("Radial height (native units)")
+            ax3.set_title("Topographical height")
 
-            fig.patch.set_facecolor("white")
-            ######################################3
+            # Panel 4 – FFT spectrum
+            ax4.stem(xf, yf, basefmt=" ", use_line_collection=True)
+            ax4.set_xlabel("FFT frequency index")
+            ax4.set_ylabel("Amplitude (normalised)")
+            ax4.set_ylim(0, 1)
+            ax4.set_title("FFT frequency analysis")
+
+            # --- Text annotations ------------------------------------------------------------
+            num_protrusions = (
+                (np.diff(np.insert(protrusion_indices.astype(int), 0, 0)) == 1).sum()
+            )
+            num_intrusions = (
+                (np.diff(np.insert(intrusion_indices.astype(int), 0, 0)) == 1).sum()
+            )
+            stats_txt = f"Protrusions: {num_protrusions}\nIntrusions: {num_intrusions}"
+            ax2.text(
+                0.95,
+                0.05,
+                stats_txt,
+                transform=ax2.transAxes,
+                ha="right",
+                va="bottom",
+                fontsize=10,
+                bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"),
+            )
+
+            curv_txt = f"Max curvature: {max(curvatures):.4f}"
+            ax1.text(
+                0.95,
+                0.05,
+                curv_txt,
+                transform=ax1.transAxes,
+                ha="right",
+                va="bottom",
+                fontsize=10,
+                bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"),
+            )
+
+            fig.tight_layout()
             pdf.savefig(fig)
             plt.close(fig)
 
     print(f"PDF saved: {pdf_path}")
+
 def save_circle_watershed_evolution_to_pdf_steps(direct, cell_number, pdf_path):
     import os
     import numpy as np
@@ -3417,7 +3241,7 @@ if __name__ == '__main__':
         #77, 24, 20, 193, 194, 195, 201, 
     #for i in [77, 24, 20, 193, 194, 195, 201, 202,203, 86]:
     #    save_circle_watershed_evolution_to_pdf(glob_folder, i, f"cell_{i+1}_pdf_new.pdf")
-    save_circle_watershed_evolution_to_pdf_steps(glob_folder, 203, f"cell_{203+1}_pdf_steps.pdf")
+    #save_circle_watershed_evolution_to_pdf_steps(glob_folder, 203, f"cell_{203+1}_pdf_steps.pdf")
     save_circle_watershed_evolution_to_pdf(glob_folder, 203, f"cell_{203+1}_pdf.pdf")
     #collect_statistics(glob_folder)
     #generate_umap_pdf_for_all_cells(glob_folder, "time_events_95.h5", "umap_all_cells.pdf")
