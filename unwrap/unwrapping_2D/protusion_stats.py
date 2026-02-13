@@ -1,12 +1,15 @@
 import os 
 import numpy as np 
 import matplotlib.pyplot as plt
-from multiprocessing import Pool
+from functools import partial
+from multiprocessing import Pool, cpu_count
 import cv2
 from scipy.ndimage import gaussian_filter1d
 from scipy.ndimage import gaussian_filter
 import glob
 import ot
+import re
+import h5py
 from scipy.interpolate import CubicSpline
 SIGMA = 1
 from collections import defaultdict
@@ -15,9 +18,6 @@ from skimage.segmentation import watershed
 from skimage.feature import peak_local_max
 from skimage.draw import polygon, disk
 from scipy.ndimage import distance_transform_edt
-from skimage.measure import label
-from scipy.ndimage import shift
-from skimage.color import label2rgb
 
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.lines import Line2D
@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.animation import FFMpegWriter
 import matplotlib.cm as cm
-
+from scipy.spatial import distance_matrix
 import umap
 reducer = umap.UMAP()
 
@@ -44,23 +44,18 @@ reducer = umap.UMAP()
 ######################################################
 from geomstats.geometry.discrete_curves import ElasticMetric
 from geomstats.geometry.discrete_curves import DiscreteCurvesStartingAtOrigin
-
 from geomstats.geometry.pre_shape import PreShapeSpace
-import matplotlib.pyplot as plt
-
+# import matplotlib.pyplot as plt
 import geomstats.backend as gs
-
-
-import h5py
-import geomstats.backend as gs
-import numpy as np 
-#from numba import jit, njit, prange
-import scipy.stats as stats
-from scipy.integrate import simpson
-from sklearn.metrics import precision_score, recall_score
-from sklearn.model_selection import cross_val_score, StratifiedKFold
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn import svm
+# import h5py
+# import numpy as np 
+# #from numba import jit, njit, prange
+# import scipy.stats as stats
+# from scipy.integrate import simpson
+# from sklearn.metrics import precision_score, recall_score
+# from sklearn.model_selection import cross_val_score, StratifiedKFold
+# from sklearn.neighbors import KNeighborsClassifier
+# from sklearn import svm
 
 
 
@@ -72,22 +67,18 @@ from geomstats.geometry.discrete_curves import (
     ElasticMetric
 )
 
+# def del_arr_elements(arr, indices):
+#     """
+#     Delete elements in indices from array arr
+#     """
 
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
-from matplotlib.collections import LineCollection
+#     # Sort the indices in reverse order to avoid index shifting during deletion
+#     indices.sort(reverse=True)
 
-def del_arr_elements(arr, indices):
-    """
-    Delete elements in indices from array arr
-    """
-
-    # Sort the indices in reverse order to avoid index shifting during deletion
-    indices.sort(reverse=True)
-
-    # Iterate over each index in the list of indices
-    for index in indices:
-        del arr[index]
-    return arr
+#     # Iterate over each index in the list of indices
+#     for index in indices:
+#         del arr[index]
+#     return arr
 
 
 
@@ -144,13 +135,13 @@ def del_arr_elements(arr, indices):
 
 
 def rotation_align(curve, base_curve, k_sampling_points):
-    """Align curve to base_curve to minimize the L² distance by \
-        trying different start points.
+#     """Align curve to base_curve to minimize the L² distance by \
+#         trying different start points.
 
-    Returns
-    -------
-    aligned_curve : discrete curve
-    """
+#     Returns
+#     -------
+#     aligned_curve : discrete curve
+#     """
     nb_sampling = len(curve)
     distances = gs.zeros(nb_sampling)
     base_curve = gs.array(base_curve)
@@ -178,14 +169,14 @@ def rotation_align(curve, base_curve, k_sampling_points):
 
 
 def align(point, base_point, rescale, rotation, reparameterization, k_sampling_points):
-    """
-    Align point and base_point via quotienting out translation, rescaling, rotation and reparameterization
-    """
+#     """
+#     Align point and base_point via quotienting out translation, rescaling, rotation and reparameterization
+#     """
 
     total_space = DiscreteCurvesStartingAtOrigin(k_sampling_points=k_sampling_points)
    
     
-    # Quotient out translation 
+#     # Quotient out translation 
     point = total_space.projection(point) 
     point = point - gs.mean(point, axis=0)
 
@@ -208,11 +199,11 @@ def align(point, base_point, rescale, rotation, reparameterization, k_sampling_p
         point = total_space.fiber_bundle.align(point, base_point)
     return point
 
-def project_on_kendall_space(curve,PRESHAPE_SPACE= None):
-    if PRESHAPE_SPACE is None:
-        PRESHAPE_SPACE = PreShapeSpace(ambient_dim=2, k_landmarks=len(curve))
-    projected_curve = PRESHAPE_SPACE.projection(curve)
-    return projected_curve
+# def project_on_kendall_space(curve,PRESHAPE_SPACE= None):
+#     if PRESHAPE_SPACE is None:
+#         PRESHAPE_SPACE = PreShapeSpace(ambient_dim=2, k_landmarks=len(curve))
+#     projected_curve = PRESHAPE_SPACE.projection(curve)
+#     return projected_curve
 
 def interpolate(curve, nb_points):
     """Interpolate a discrete curve with nb_points from a discrete curve.
@@ -256,10 +247,6 @@ def l2_fourier(x, y, x1, y1):
 
     return euclidean(y, y1)
 
-
-
-
-
 def fft_transformation(x_coords, y_coords, f_max):
         x_coords = (x_coords - x_coords[0]) / (x_coords[-1] - x_coords[0])
         x_fourier  = x_coords
@@ -286,8 +273,6 @@ def fft_transformation(x_coords, y_coords, f_max):
 #        plt.show()
         return xf[mask], 2*np.abs(yf[mask])/n/5
 
-
-
 def height_interpolation(x_coords, y_coords, number_of_points):
         x_coords = (x_coords - x_coords[0]) / (x_coords[-1] - x_coords[0])
         x_uniform = np.linspace(x_coords[0], x_coords[-1], number_of_points)
@@ -297,8 +282,6 @@ def height_interpolation(x_coords, y_coords, number_of_points):
         y_uniform = interp_func(x_uniform)
 
         return y_uniform
-
-
 
 def op_index(cell_shape_1, cell_shape_2, index_from):
 
@@ -323,8 +306,6 @@ def op_index(cell_shape_1, cell_shape_2, index_from):
 
     #return
     return mapping[index_from]
-
-
 
 
 def conformal_representation(cell_folder ,
@@ -659,42 +640,127 @@ def max_protusion_plot(direct, time_events_h5="time_events_90.h5"):
         plt.show()
 
 
-def _stats_max_protusions(cell_folder, smoothing = False, smooth_time = 2):
-    all_outlines, _, all_outlines_cMCF_topography, all_outlines_curvature, _, fin_centr, fin_times = conformal_representation(cell_folder)
+def _stats_max_protusions(cell_folder, smoothing=False, smooth_time=2, nonignore_mode=None):
+
+    (all_outlines, _, all_outlines_cMCF_topography, all_outlines_curvature, _, fin_centr, fin_times) = conformal_representation(cell_folder)
+
+    tot_len = len(all_outlines)
+    
+    vec_topo, vec_curv, val_curv, velocity_list = [], [], [], []
+
+    cell_number = int(re.search(r'cell_(\d+)$', cell_folder).group(1))
+ 
+    # --- события --------------------------------------------------------
+    if nonignore_mode is not None:
+        with h5py.File('/home/pavel/cell_morphology/filtered_data/time_events_filtered.h5', 'r') as f:
+            tr = f[f'/track_{cell_number}'][:]
+        event_idx   = np.append(tr[0].astype(int), tr[1, -1].astype(int))   # границы интервалов
+        interval_ty = tr[2, :] 
+                                               # типы интервалов
+    time_for_classifier = 0
+    # --- основной цикл --------------------------------------------------
+    for jj in range(1, tot_len):
+        # ---- фильтр по типу интервала ----------------------------------
+        if nonignore_mode is not None:
+            # время кадра jj-1 в «счётчике» события                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
+            time = fin_times[jj - 1] + 1 - fin_times[0]
+            time_for_classifier =  time_for_classifier+1
+
+
+            idx = np.searchsorted(event_idx - 1, time_for_classifier) - 1
+
+            if idx < 0 or interval_ty[idx] != nonignore_mode:
+                continue                # пропускаем «не-2»                                                                                                                     
+
+        # ---- геометрия -------------------------------------------------
+        topography = all_outlines_cMCF_topography[jj]
+        outline    = all_outlines[jj]
+        curv       = all_outlines_curvature[jj]
+        centr      = fin_centr[jj]
+
+        idx_topo  = np.argmax(np.sum(topography**2, axis=1))        
+        idx_curv  = np.argmin(curv)
+
+        vec_topo.append(outline[idx_topo]  - centr)
+        vec_curv.append(outline[idx_curv]  - centr)
+        val_curv.append(curv[idx_curv])
+
+        # ---- скорость --------------------------------------------------
+        disp = fin_centr[jj] - fin_centr[jj - 1]
+        dt   = fin_times[jj] - fin_times[jj - 1]
+
+        if smoothing:
+            # окно сглаживания только по «валидным» кадрам
+            t_center = fin_times[jj]
+            ok = (fin_times[1: jj+1] >= t_center - smooth_time) & \
+                 (fin_times[1: jj+1] <= t_center + smooth_time)
+
+            if np.any(ok):
+                disp_win = fin_centr[1:jj+1][ok] - fin_centr[:jj][ok]
+                dt_win   = fin_times[1:jj+1][ok] - fin_times[:jj][ok]
+                vel = np.sum(disp_win, axis=0) / np.sum(dt_win)
+            else:
+                vel = disp / dt
+        else:
+            vel = disp / dt
+
+        velocity_list.append(vel)
+
+    # --- финальный вывод -----------------------------------------------
+    velocity = np.array(velocity_list).reshape(-1, 2)   # (N,2)
+    return velocity, vec_topo, vec_curv, val_curv
+
+
+def _stats_max_intrusions(cell_folder, smoothing=False, smooth_time=2):
+    (
+        all_outlines,
+        _,
+        all_outlines_cMCF_topography,
+        all_outlines_curvature,
+        _,
+        fin_centr,
+        fin_times
+    ) = conformal_representation(cell_folder)
+
     tot_len = len(all_outlines)
     vec_topo = []
     vec_curv = []
     val_curv = []
-    for jj in np.arange(tot_len)[1:]:
-        
-        topography_coords_disk = all_outlines_cMCF_topography[jj]
+
+    for jj in np.arange(1, tot_len):
+        topo_coords = all_outlines_cMCF_topography[jj]
         outline = all_outlines[jj]
         curv = all_outlines_curvature[jj]
         centr = fin_centr[jj]
-        
-        index = np.argmax(topography_coords_disk [:,0]**2+topography_coords_disk [:,1]**2)
-        index_curv = np.argmin(curv)
-        
-        vec_topo.append(outline[index] - centr)
-        vec_curv.append(outline[index_curv] - centr)
-        val_curv.append(curv[index_curv])
-        
-    displacement = fin_centr[1:]- fin_centr[:-1]
-    velocity = np.zeros(np.shape(displacement))
+
+        # --- Find intrusion by MINIMUM height and curvature ---
+        idx_topo = np.argmin(topo_coords[:, 0]**2 + topo_coords[:, 1]**2)
+        idx_curv = np.argmin(curv)
+
+        vec_topo.append(outline[idx_topo] - centr)
+        vec_curv.append(outline[idx_curv] - centr)
+        val_curv.append(curv[idx_curv])
+
+    # --- Compute velocities between centers ---
+    displacement = fin_centr[1:] - fin_centr[:-1]
+    velocity = np.zeros_like(displacement)
+
     if smoothing:
-        
-        for jj, val_jj in enumerate(displacement):
-            mask = np.logical_and(fin_times[1:]>= fin_times[jj] - smooth_time, fin_times[1:]<= fin_times[jj] + smooth_time)
-            if np.sum(mask) >1 :
-                time_var = fin_times[1:] - fin_times[:-1]
-                velocity[jj] = (np.sum(displacement[mask])) / (np.sum(time_var[mask]))
+        for jj, disp_jj in enumerate(displacement):
+            mask = np.logical_and(
+                fin_times[1:] >= fin_times[jj] - smooth_time,
+                fin_times[1:] <= fin_times[jj] + smooth_time
+            )
+            if np.sum(mask) > 1:
+                time_diff = fin_times[1:] - fin_times[:-1]
+                velocity[jj] = np.sum(displacement[mask], axis=0) / np.sum(time_diff[mask])
             else:
-                velocity[jj] = val_jj / (fin_times[jj+1] - fin_times[jj])
-            
-    else :
-        velocity[:,0] = displacement[:,0] / (fin_times[1:]-fin_times[:-1])
-        velocity[:,1] = displacement[:,1] / (fin_times[1:]-fin_times[:-1])
-        
+                dt = fin_times[jj + 1] - fin_times[jj]
+                velocity[jj] = disp_jj / dt
+    else:
+        dt = fin_times[1:] - fin_times[:-1]
+        velocity[:, 0] = displacement[:, 0] / dt
+        velocity[:, 1] = displacement[:, 1] / dt
 
     return velocity, vec_topo, vec_curv, val_curv
 
@@ -719,13 +785,13 @@ def stats_max_protusions(direct):
     res_topo = np.array(res_topo)
     val_curv = np.array(val_curv)
     
-    plt.figure()
-    plt.xlabel('Max curvature')
-    plt.ylabel('Velocity norm')
-    vel_norm = (res_velo[:,0]**2+res_velo[:,1]**2)**0.5
-    plt.scatter(-val_curv, vel_norm)
+    # plt.figure()
+    # plt.xlabel('Max curvature')
+    # plt.ylabel('Velocity norm')
+    # vel_norm = (res_velo[:,0]**2+res_velo[:,1]**2)**0.5
+    # #plt.scatter(-val_curv, vel_norm)
     
-    plt.figure()
+    # plt.figure()
     bin_num = 20
     bottom = 400
 
@@ -767,6 +833,58 @@ def stats_max_protusions(direct):
         bar.set_alpha(0.8)
 
     
+    plt.show()
+
+def stats_max_intrusions(direct):
+    from multiprocessing import Pool
+
+    res_velo = []
+    res_topo = []
+    val_curv = []
+    res_curv = []
+
+    all_cell_folders = [os.path.join(direct, ff) for ff in os.listdir(direct)]
+
+    with Pool(processes=8) as pool:
+            for _velo, _topo, _curv, _vcurv in pool.imap_unordered(_stats_max_intrusions, all_cell_folders):
+                val_curv.extend(_vcurv)
+                res_velo.extend(_velo)
+                res_topo.extend(_topo)
+                res_curv.extend(_curv)
+
+    res_velo = np.array(res_velo)
+    res_topo = np.array(res_topo)
+    val_curv = np.array(val_curv)
+
+    # ----------------------------
+    # Plot: curvature vs velocity
+    # ----------------------------
+    plt.figure()
+    plt.xlabel('Min curvature')
+    plt.ylabel('Velocity norm')
+    vel_norm = np.linalg.norm(res_velo, axis=1)
+    plt.scatter(-val_curv, vel_norm)
+
+    plt.figure()
+    bin_num = 20
+    bottom = 400
+
+    theta_topo = np.arctan2(res_topo[:, 0], res_topo[:, 1])
+    theta_velo = np.arctan2(res_velo[:, 0], res_velo[:, 1])
+    theta = (theta_topo - theta_velo) % (2 * np.pi)
+
+    hist = np.histogram(theta, bins=bin_num, range=(0, 2 * np.pi))
+    width = (2 * np.pi) / bin_num
+
+    ax = plt.subplot(111, polar=True)
+    ax.set_title('Angle of max intrusion with the displacement, topology')
+    bars = ax.bar((hist[1][:-1] + hist[1][1:]) / 2, hist[0], width=width, bottom=bottom)
+
+    max_val = np.max(hist[0])
+    for r, bar in zip(hist[0], bars):
+        bar.set_facecolor(plt.cm.jet(r / max_val))
+        bar.set_alpha(0.8)
+
     plt.show()
 
 
@@ -1200,16 +1318,22 @@ def save_circle_watershed_evolution_to_pdf(
     initial_critical_height_intrusion: float = 5.0797,
     critical_curvature: float = 0.0454,
 ):
-    """Save one‑page‑per‑frame visualisation of shape/topography evolution.
+    """Visualise cell outline & topography through time.
 
-    The rewritten version avoids any conversion to a pixel grid and does not
-    rely on ``imshow``.  Every panel is plotted directly in the native
-    coordinate system returned by ``conformal_representation``.  Colours are
-    used to indicate protrusions (red) and intrusions (green).  Neutral points
-    are shown in light grey.
+    Logic mirrors the original prototype:
+    1. Classify points by height sign (protrusion / intrusion / neutral).
+    2. *Gap‑fill* white stretches if bounded by same colour (stride=10).
+    3. Remove coloured segments shorter than `stride` (stride=5).
+    4. Compute curvature‑aware P/I criteria; blank segments with no P/I.
+    5. Sort by polar angle for height/FFT panels.
+
+    Rendering: scatter‑only (except dashed nucleus circle).  The FFT "stem"
+    is commented out to comply with scatter‑only visuals.
     """
 
-    # Collect folders for every time point in a reproducible order
+    # ------------------------------------------------------------------
+    # Data gathering
+    # ------------------------------------------------------------------
     all_cell_folders = [
         os.path.join(direct, ff)
         for ff in sorted(
@@ -1228,23 +1352,24 @@ def save_circle_watershed_evolution_to_pdf(
         fin_times,
     ) = conformal_representation(all_cell_folders[cell_number])
 
-    # Shift vectors between consecutive frames (labs coordinates)
     shifts = get_shift(all_outlines, centr, fin_times)
 
-    # Estimate nucleus/cell core radius in *native* coordinates (used for thresholds)
+    #riemann = np.load('/home/pavel/cell_morphology/nov30/riemann_distances.npy', allow_pickle=True)[cell_number]
+    riemann = np.load('/home/pavel/Desktop/ot_res_08_10/ot_distances.npy', allow_pickle=True)[cell_number]
+    #print(riemann)
+    
+    times = np.load('/home/pavel/Desktop/ot_res_08_10/times.npy', allow_pickle=True)[cell_number]
+
     disk_center = np.mean(disk_coors, axis=0)
     disk_radius = np.mean(np.linalg.norm(disk_coors - disk_center, axis=1))
-    # Maintain historical convention where 50 px corresponded to this reference radius
-    scale_factor = disk_radius / 50.0
-    critical_height_protrusion = initial_critical_height_protrusion * scale_factor
-    critical_height_intrusion = initial_critical_height_intrusion * scale_factor
-
+    print(pdf_path)
+    pdf_path = "pdf_single_cell_ot/" + pdf_path
     with PdfPages(pdf_path) as pdf:
-        index_from = 0  # running reference point for orientation
+        index_from = 0  # anchor for orientation between frames
 
         for jj, (
             outline,
-            topography_coords_disk,
+            topo_coords,
             curvatures,
             shift,
             time,
@@ -1258,60 +1383,191 @@ def save_circle_watershed_evolution_to_pdf(
             )
         ):
             outline = outline.copy()
-            topography_coords_disk = topography_coords_disk.copy()
+            topo_coords = smooth_topo(topo_coords.copy())
             curvatures = curvatures.copy()
+            n_pts = len(topo_coords)
 
-            # --- Geometry preparation ---------------------------------------------------------
-            topography_coords_disk = smooth_topo(topography_coords_disk)
             if jj > 0:
                 index_from = op_index(all_outlines[jj - 1], outline, index_from)
 
-            # Polar angle definition w.r.t. reference vertex
+            if jj>0:
+                dt = times[jj]- times[jj-1]
+                riemann_velocity = (riemann[jj])/dt
+            if jj == 0:
+                riemann_velocity = 0
+
+            # ------------------------------------------------------
+            # Polar coordinates & radial height
+            # ------------------------------------------------------
             theta_ref = np.arctan2(
-                topography_coords_disk[index_from][0] - disk_center[0],
-                topography_coords_disk[index_from][1] - disk_center[1],
+                topo_coords[index_from][0] - disk_center[0],
+                topo_coords[index_from][1] - disk_center[1],
             )
-            theta_topo = np.arctan2(
-                topography_coords_disk[:, 0] - disk_center[0],
-                topography_coords_disk[:, 1] - disk_center[1],
+            theta_raw = np.arctan2(
+                topo_coords[:, 0] - disk_center[0],
+                topo_coords[:, 1] - disk_center[1],
             )
-            theta_deg = np.degrees((theta_topo - theta_ref) % (2 * np.pi))
+            theta_deg = np.degrees((theta_raw - theta_ref) % (2 * np.pi))
+            topo_height = np.linalg.norm(topo_coords - disk_center, axis=1) - disk_radius
+            
+            ##turning the second topographical picture
+            vec = topo_coords[index_from] - disk_center
+            theta_index_point = np.arctan2(vec[1], vec[0])
+            R = np.array([
+                [np.cos(-theta_index_point), -np.sin(-theta_index_point)],
+                [np.sin(-theta_index_point),  np.cos(-theta_index_point)]
+            ])
+            topo_rotated = (topo_coords - disk_center) @ R.T + disk_center
 
-            # Radial height of the topography relative to nucleus circle
-            topo_height = (
-                np.linalg.norm(topography_coords_disk - disk_center, axis=1) - disk_radius
-            )
+            # ------------------------------------------------------
+            # INITIAL colour map based on height sign
+            # ------------------------------------------------------
+            WHITE = (1.0, 1.0, 1.0)
+            RED   = (1.0, 0.0, 0.0)
+            GREEN = (0.0, 1.0, 0.0)
+            colour = [WHITE] * n_pts
+            for idx, h in enumerate(topo_height):
+                if h > 0:
+                    colour[idx] = RED
+                elif h < 0:
+                    colour[idx] = GREEN
 
-            # FFT spectrum for periodic representation (first 30 modes by default):
-            xf, yf = fft_transformation(theta_deg, topo_height, 30)
+            # ------------------------------------------------------
+            # FILL small white gaps bounded by same colour (stride=10)
+            # ------------------------------------------------------
+            stride_fill = 10
+            changed = True
+            while changed:
+                changed = False
+                for i in range(n_pts):
+                    if colour[i] == WHITE:
+                        prev_col = colour[(i - 1) % n_pts]
+                        for off in range(1, stride_fill + 1):
+                            fwd_idx = (i + off) % n_pts
+                            fwd_col = colour[fwd_idx]
+                            if fwd_col != WHITE:
+                                if fwd_col == prev_col:
+                                    for z in range(off):
+                                        idx_paint = (i + z) % n_pts
+                                        if colour[idx_paint] == WHITE:
+                                            colour[idx_paint] = prev_col
+                                            changed = True
+                                break
 
-            # --- Classification --------------------------------------------------------------
-            protrusion_indices = topo_height > 0
-            intrusion_indices = topo_height < 0
-            color_by_index = np.full((len(topo_height), 3), (0.5, 0.5, 0.5))
-            color_by_index[protrusion_indices] = (1.0, 0.0, 0.0)  # red
-            color_by_index[intrusion_indices] = (0.0, 1.0, 0.0)  # green
+            # ------------------------------------------------------
+            # BLANK coloured segments shorter than stride=5
+            # ------------------------------------------------------
+            # stride_short = 5
+            # i = 0
+            # while i < n_pts:
+            #     col = colour[i]
+            #     if col in (RED, GREEN):
+            #         j = 0
+            #         while colour[(i + j) % n_pts] == col and j < n_pts:
+            #             j += 1
+            #         if j < stride_short:
+            #             for k in range(j):
+            #                 colour[(i + k) % n_pts] = WHITE
+            #         i += j
+            #     else:
+            #         i += 1
 
-            # Secondary criterion based on curvature thresholds
-            criteria_index = []
+            # ------------------------------------------------------
+            # CURVATURE‑aware criteria (P/I) & segment filtering
+            # ------------------------------------------------------
+            criteria = []
             for r, curv in zip(topo_height, curvatures):
-                if r > critical_height_protrusion and abs(curv) > abs(critical_curvature):
-                    criteria_index.append("P")
-                elif r < -critical_height_intrusion and abs(curv) > abs(critical_curvature):
-                    criteria_index.append("I")
+                if r > initial_critical_height_protrusion and abs(curv) > abs(critical_curvature):
+                    criteria.append("P")
+                elif r < -initial_critical_height_intrusion and abs(curv) > abs(critical_curvature):
+                    criteria.append("I")
                 else:
-                    criteria_index.append("N")
+                    criteria.append("N")
 
-            # --- Plotting --------------------------------------------------------------------
+            i = 0
+            # if int(time) == 10:          # кадр, где видите разрыв
+            #     print(readable_colours(colour))
+            #     print(criteria)
+            colour_ext = colour + colour
+            criteria_ext = criteria + criteria
+            colour_filtered = colour.copy()
+            
+            i = 0
+            while i < 2 * n_pts:
+                col = colour_ext[i]
+                if tuple(col) == RED or tuple(col) == GREEN:
+                    seg_idx = []
+                    has_PI = False
+                    while i < 2 * n_pts and tuple(colour_ext[i]) == col:
+                        seg_idx.append(i)
+                        if criteria_ext[i] in ("P", "I"):
+                            has_PI = True
+                        i += 1
+                    # Убираем только те сегменты, которые целиком внутри первой половины
+                    if not has_PI:
+                        for idx in seg_idx:
+                            if idx < n_pts:
+                                colour_filtered[idx] = WHITE
+                else:
+                    i += 1
+            ####maintaining the end-start
+            if(colour_filtered[-1]==RED and colour[0]==RED):
+                i = 0
+                while (colour[i]==RED):
+                    colour_filtered[i]=RED
+                    i+=1
+            
+            if(colour_filtered[-1]==GREEN and colour[0]==GREEN):
+                i = 0
+                while (colour[i]==GREEN):
+                    colour_filtered[i]=GREEN
+                    i+=1
+            ###maintaining the start-end
+            if(colour_filtered[0]==RED and colour[-1]==RED):
+                i = -1
+                while (colour[i]==RED):
+                    colour_filtered[i]=RED
+                    i-=1
+            
+            if(colour_filtered[0]==GREEN and colour[-1]==GREEN):
+                i = -1
+                while (colour[i]==GREEN):
+                    colour_filtered[i]=GREEN
+                    i-=1
+
+
+            colour = colour_filtered
+            
+            
+            # Convert WHITE to light grey for visibility in scatter
+            colour_vis = [ (0.5, 0.5, 0.5) if c == WHITE else c for c in colour ]
+            colour_arr = np.array(colour_vis)
+
+            # ------------------------------------------------------
+            # ORDER for angle‑dependent panels
+            # ------------------------------------------------------
+            sort_idx = np.argsort(theta_deg)
+            theta_sorted = theta_deg[sort_idx]
+            height_sorted = topo_height[sort_idx]
+            colour_sorted = colour_arr[sort_idx]
+
+            # ------------------------------------------------------
+            # FFT (first 30 modes)
+            # ------------------------------------------------------
+            xf, yf = fft_transformation(theta_sorted, height_sorted, 30)
+            xf, yf = np.asarray(xf), np.asarray(yf)
+            m = min(len(xf), len(yf))
+            xf, yf = xf[:m], yf[:m]
+
+            # ------------------------------------------------------
+            # Plotting
+            # ------------------------------------------------------
             fig = plt.figure(figsize=(24, 6))
-            ax1 = fig.add_subplot(141)  # outline & shift
-            ax2 = fig.add_subplot(142)  # coloured boundary & nucleus
-            ax3 = fig.add_subplot(143)  # height vs angle
-            ax4 = fig.add_subplot(144)  # FFT spectrum
+            ax1, ax2, ax3, ax4 = [fig.add_subplot(1, 4, k + 1) for k in range(4)]
 
-            # Panel 1 – outline with shift vector
-            ax1.plot(*outline.T, "k-")
-            ax1.scatter(*outline[index_from], color="blue", zorder=5, label="Reference vertex")
+            # ax1: outline scatter + shift
+            ax1.scatter(outline[:, 0], outline[:, 1], c=colour_arr, s=14)
+            ax1.scatter(*outline[index_from], color="blue", s=24, zorder=5)
             if np.any(np.array(shift) != 0):
                 center_now = outline.mean(axis=0)
                 ax1.arrow(
@@ -1322,76 +1578,111 @@ def save_circle_watershed_evolution_to_pdf(
                     head_width=0.05 * disk_radius,
                     length_includes_head=True,
                     color="blue",
-                    linewidth=1.5,
-                    label="Shift vector",
+                    linewidth=1.2,
                 )
             ax1.set_aspect("equal")
             ax1.set_title(f"Shape evolution (t = {time:.2f})")
-            ax1.legend(loc="best")
 
-            # Panel 2 – coloured boundary & nucleus circle
-            ax2.plot(*outline.T, color="black", linewidth=1.2)
-            ax2.scatter(
-                topography_coords_disk[:, 0],
-                topography_coords_disk[:, 1],
-                c=color_by_index,
-                s=12,
-                linewidths=0,
-            )
-            # nucleus circle for reference
-            circle = plt.Circle(disk_center, disk_radius, color="grey", ls="--", fill=False)
-            ax2.add_patch(circle)
+            # ax2: topography scatter + reference circle
+         
+            if np.any(np.array(shift) != 0):
+                # 1) Центр клетки и нормированный вектор движения
+                center_now = outline.mean(axis=0)
+                v_norm = shift / (np.linalg.norm(shift) + 1e-9)
+
+                # 2) Радиальные векторы всех точек контура
+                vecs = outline - center_now              # shape (n_pts, 2)
+                norms = np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-9  # avoid zero division
+                vecs_normalized = vecs / norms  # shape (n_pts, 2)
+                dir_idx = int(np.argmax(vecs_normalized @ v_norm))  # индекс «самой передней» точки
+                #dir_idx = 0
+                #print(f"index from {index_from}      dir_idx {dir_idx}")
+                # 3) Переходим в систему topo_rotated
+                start_point = (0,0)
+                head_point  = topo_rotated[dir_idx]
+                arrow_vec   = head_point - start_point
+
+                # 4) Подрезаем длину до 20 % радиуса диска (чтобы не вылазило)
+                
+                base_radius = np.linalg.norm(vecs[dir_idx])  # длина вектора до этой точки в исходной системе
+                if base_radius > 1e-9:
+                    scale = np.linalg.norm(shift) / base_radius
+                    arrow_vec = arrow_vec * scale
+                # 5) Рисуем стрелку
+                ax2.arrow(0, 0,
+                        arrow_vec[0],   arrow_vec[1],
+                        head_width=0.05 * disk_radius,
+                        length_includes_head=True,
+                        color="blue", linewidth=1.2, zorder=6)         
+            ax2.scatter(topo_rotated[:, 0], topo_rotated[:, 1], c=colour_arr, s=14, linewidths=0)
+            ax2.scatter(*topo_rotated[index_from], color="blue", s=24, zorder=5)
+            
+            ax2.add_patch(plt.Circle(disk_center, disk_radius, color="grey", ls="--", fill=False))
             ax2.scatter(*disk_center, color="k", s=20)
             ax2.set_aspect("equal")
             ax2.set_title("Topographical representation")
 
-            # Panel 3 – radial height vs polar angle
+            # ax3: height vs angle
             ax3.axhline(0, color="k", lw=0.8)
-            ax3.scatter(theta_deg, topo_height, c=color_by_index, s=12)
+            ax3.axhline(initial_critical_height_protrusion, color="r", ls="--", lw=1.2)
+            ax3.axhline(-initial_critical_height_intrusion, color="g", ls="--", lw=1.2)
+            ax3.scatter(theta_sorted, height_sorted, c=colour_sorted, s=14)
             ax3.set_xlim(0, 360)
             ax3.set_xticks(np.arange(0, 361, 45))
             ax3.set_xlabel("Polar angle (°)")
             ax3.set_ylabel("Radial height (native units)")
             ax3.set_title("Topographical height")
 
-            # Panel 4 – FFT spectrum
-            ax4.stem(xf, yf, basefmt=" ", use_line_collection=True)
+            # ax4: FFT
+            ax4.stem(xf, yf, basefmt=" ")  # ⇦ original stem plot (commented as requested)
+            ax4.scatter(xf, yf, s=18)  # scatter replacement keeps scatter‑only rule
             ax4.set_xlabel("FFT frequency index")
-            ax4.set_ylabel("Amplitude (normalised)")
+            ax4.set_ylabel("Amplitude (norm.)")
             ax4.set_ylim(0, 1)
-            ax4.set_title("FFT frequency analysis")
+            ax4.set_title("FFT spectrum (scatter)")
 
-            # --- Text annotations ------------------------------------------------------------
-            num_protrusions = (
-                (np.diff(np.insert(protrusion_indices.astype(int), 0, 0)) == 1).sum()
-            )
-            num_intrusions = (
-                (np.diff(np.insert(intrusion_indices.astype(int), 0, 0)) == 1).sum()
-            )
-            stats_txt = f"Protrusions: {num_protrusions}\nIntrusions: {num_intrusions}"
+            # --------------------------------------------------
+            # Statistics & annotations
+            # --------------------------------------------------
+            num_protr, num_intr = 0, 0
+            for i in range(n_pts):
+                cur = colour[i]
+                prev = colour[(i - 1) % n_pts]
+                if cur == RED and prev != RED:
+                    num_protr += 1
+                if cur == GREEN and prev != GREEN:
+                    num_intr += 1
+
             ax2.text(
                 0.95,
                 0.05,
-                stats_txt,
+                f"Protrusions: {num_protr}\nIntrusions: {num_intr}",
                 transform=ax2.transAxes,
                 ha="right",
                 va="bottom",
                 fontsize=10,
                 bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"),
             )
-
-            curv_txt = f"Max curvature: {max(curvatures):.4f}"
             ax1.text(
                 0.95,
                 0.05,
-                curv_txt,
+                f"Max curvature: {max(curvatures):.4f}",
                 transform=ax1.transAxes,
                 ha="right",
                 va="bottom",
                 fontsize=10,
                 bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"),
             )
-
+            ax1.text(
+                0.95,
+                0.95,
+                f"OT Velocity: {riemann_velocity:.4f}",
+                transform=ax1.transAxes,
+                ha="right",
+                va="top",
+                fontsize=10,
+                bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"),
+            )
             fig.tight_layout()
             pdf.savefig(fig)
             plt.close(fig)
@@ -1689,10 +1980,317 @@ def save_circle_watershed_evolution_to_pdf_steps(direct, cell_number, pdf_path):
     print(f"PDF saved: {pdf_path}")
 
 
+def save_circle_watershed_evolution_to_video_from_data(
+    direct: str,
+    cell_number: int,
+    video_path: str,
+    riemann_path: str,
+    times_path: str,
+    initial_critical_height_protrusion: float = 6.1495,
+    initial_critical_height_intrusion: float  = 5.0797,
+    critical_curvature: float                 = 0.0454,
+    fps: int = 2,
+    dpi: int = 100,
+):
+    """
+    Рендерит кадровое видео по тем же данным и логике, что и save_circle_watershed_evolution_to_pdf,
+    без генерации PDF. Каждый кадр — то же 1×4 полотно.
+    """
+
+    # ---------- подготовка данных (как в PDF-версии) ----------
+    all_cell_folders = [
+        os.path.join(direct, ff)
+        for ff in sorted(
+            os.listdir(direct),
+            key=lambda x: int(x.split("_")[1]) if "_" in x and x.split("_")[1].isdigit() else 0,
+        )
+    ]
+
+    (
+        all_outlines,
+        _,
+        all_outlines_cMCF_topography,
+        all_outlines_curvature,
+        disk_coors,
+        centr,
+        fin_times,
+    ) = conformal_representation(all_cell_folders[cell_number])
+
+    shifts = get_shift(all_outlines, centr, fin_times)
+
+    riemann = np.load(riemann_path, allow_pickle=True)[cell_number]
+    times   = np.load(times_path,   allow_pickle=True)[cell_number]
+
+    disk_center = np.mean(disk_coors, axis=0)
+    disk_radius = np.mean(np.linalg.norm(disk_coors - disk_center, axis=1))
+
+    WHITE = (1.0, 1.0, 1.0)
+    RED   = (1.0, 0.0, 0.0)
+    GREEN = (0.0, 1.0, 0.0)
+
+    # ---------- helper: рендер одного кадра → RGB ----------
+    def render_frame(jj, index_from_prev):
+        outline   = all_outlines[jj].copy()
+        topo      = smooth_topo(all_outlines_cMCF_topography[jj].copy())
+        curv      = all_outlines_curvature[jj].copy()
+        shift     = shifts[jj]
+        time      = fin_times[jj]
+        n_pts     = len(topo)
+
+        # ориентация относительно предыдущего кадра
+        index_from = index_from_prev
+        if jj > 0:
+            index_from = op_index(all_outlines[jj - 1], outline, index_from_prev)
+
+        # riemann velocity
+        if jj > 0:
+            dt = times[jj] - times[jj - 1]
+            riemann_velocity = (riemann[jj]) / (dt if dt != 0 else 1e-9)
+        else:
+            riemann_velocity = 0.0
+
+        # полярные углы / высоты
+        theta_ref = np.arctan2(
+            topo[index_from][0] - disk_center[0],
+            topo[index_from][1] - disk_center[1],
+        )
+        theta_raw = np.arctan2(
+            topo[:, 0] - disk_center[0],
+            topo[:, 1] - disk_center[1],
+        )
+        theta_deg = np.degrees((theta_raw - theta_ref) % (2 * np.pi))
+        topo_height = np.linalg.norm(topo - disk_center, axis=1) - disk_radius
+
+        # разворот топографии для стрелки движения
+        vec = topo[index_from] - disk_center
+        theta_index_point = np.arctan2(vec[1], vec[0])
+        R = np.array([
+            [np.cos(-theta_index_point), -np.sin(-theta_index_point)],
+            [np.sin(-theta_index_point),  np.cos(-theta_index_point)]
+        ])
+        topo_rotated = (topo - disk_center) @ R.T + disk_center
+
+        # начальная раскраска по знаку высоты
+        colour = [WHITE] * n_pts
+        for k, h in enumerate(topo_height):
+            if h > 0:  colour[k] = RED
+            elif h < 0: colour[k] = GREEN
+
+        # fill белых "зазоров" если по краям одинаковый цвет
+        stride_fill = 10
+        changed = True
+        while changed:
+            changed = False
+            for i in range(n_pts):
+                if colour[i] == WHITE:
+                    prev_col = colour[(i - 1) % n_pts]
+                    for off in range(1, stride_fill + 1):
+                        fwd_idx = (i + off) % n_pts
+                        fwd_col = colour[fwd_idx]
+                        if fwd_col != WHITE:
+                            if fwd_col == prev_col:
+                                for z in range(off):
+                                    idx_paint = (i + z) % n_pts
+                                    if colour[idx_paint] == WHITE:
+                                        colour[idx_paint] = prev_col
+                                        changed = True
+                            break
+
+        # критерии P/I по высоте+кривизне
+        criteria = []
+        for r, c in zip(topo_height, curv):
+            if r >  initial_critical_height_protrusion and abs(c) > abs(critical_curvature):
+                criteria.append("P")
+            elif r < -initial_critical_height_intrusion and abs(c) > abs(critical_curvature):
+                criteria.append("I")
+            else:
+                criteria.append("N")
+
+        # удаляем цветные сегменты без P/I (как в PDF)
+        colour_ext     = colour + colour
+        criteria_ext   = criteria + criteria
+        colour_filtered= colour.copy()
+        i = 0
+        while i < 2 * n_pts:
+            col = colour_ext[i]
+            if tuple(col) in (RED, GREEN):
+                seg_idx = []
+                has_PI  = False
+                while i < 2 * n_pts and tuple(colour_ext[i]) == col:
+                    seg_idx.append(i)
+                    if criteria_ext[i] in ("P", "I"):
+                        has_PI = True
+                    i += 1
+                if not has_PI:
+                    for idx in seg_idx:
+                        if idx < n_pts:
+                            colour_filtered[idx] = WHITE
+            else:
+                i += 1
+
+        # сшивка концов/начала
+        if (colour_filtered[-1] == RED and colour[0] == RED):
+            i = 0
+            while (colour[i] == RED):
+                colour_filtered[i] = RED
+                i += 1
+        if (colour_filtered[-1] == GREEN and colour[0] == GREEN):
+            i = 0
+            while (colour[i] == GREEN):
+                colour_filtered[i] = GREEN
+                i += 1
+        if (colour_filtered[0] == RED and colour[-1] == RED):
+            i = -1
+            while (colour[i] == RED):
+                colour_filtered[i] = RED
+                i -= 1
+        if (colour_filtered[0] == GREEN and colour[-1] == GREEN):
+            i = -1
+            while (colour[i] == GREEN):
+                colour_filtered[i] = GREEN
+                i -= 1
+
+        colour = colour_filtered
+        colour_vis = [(0.5, 0.5, 0.5) if c == WHITE else c for c in colour]
+        colour_arr = np.array(colour_vis)
+
+        # сортировки для угловой диаграммы/FFT
+        sort_idx       = np.argsort(theta_deg)
+        theta_sorted   = theta_deg[sort_idx]
+        height_sorted  = topo_height[sort_idx]
+        colour_sorted  = colour_arr[sort_idx]
+
+        # FFT (30 мод)
+        xf, yf = fft_transformation(theta_sorted, height_sorted, 30)
+        xf, yf = np.asarray(xf), np.asarray(yf)
+        m = min(len(xf), len(yf))
+        xf, yf = xf[:m], yf[:m]
+
+        # подсчёт кол-ва протрузий/интрузий (границы сегментов)
+        num_protr = 0
+        num_intr  = 0
+        for k in range(n_pts):
+            curc  = colour[k]
+            prevc = colour[(k - 1) % n_pts]
+            if curc == RED   and prevc != RED:   num_protr += 1
+            if curc == GREEN and prevc != GREEN: num_intr  += 1
+
+        # ---------- Рисуем 1×4 фигуру, забираем RGB ----------
+        fig = plt.figure(figsize=(24, 6), dpi=dpi)
+        ax1, ax2, ax3, ax4 = [fig.add_subplot(1, 4, k + 1) for k in range(4)]
+
+        # ax1: outline + shift
+        ax1.scatter(outline[:, 0], outline[:, 1], c=colour_arr, s=14)
+        ax1.scatter(*outline[index_from], color="blue", s=24, zorder=5)
+        if np.any(np.array(shift) != 0):
+            center_now = outline.mean(axis=0)
+            ax1.arrow(center_now[0], center_now[1],
+                      shift[0] * 1.5, shift[1] * 1.5,
+                      head_width=0.05 * disk_radius, length_includes_head=True,
+                      color="blue", linewidth=1.2)
+        ax1.set_aspect("equal")
+        ax1.set_title(f"Shape evolution (t = {time:.2f})")
+
+        # ax2: topography (синяя стрелка направления)
+        if np.any(np.array(shift) != 0):
+            center_now = outline.mean(axis=0)
+            v_norm = shift / (np.linalg.norm(shift) + 1e-9)
+            vecs = outline - center_now
+            norms = np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-9
+            vecs_normalized = vecs / norms
+            dir_idx = int(np.argmax(vecs_normalized @ v_norm))
+            start_point = (0, 0)
+            head_point  = topo_rotated[dir_idx]
+            arrow_vec   = head_point - start_point
+            base_radius = np.linalg.norm(vecs[dir_idx])
+            if base_radius > 1e-9:
+                scale = np.linalg.norm(shift) / base_radius
+                arrow_vec = arrow_vec * scale
+            ax2.arrow(0, 0, arrow_vec[0], arrow_vec[1],
+                      head_width=0.05 * disk_radius, length_includes_head=True,
+                      color="blue", linewidth=1.2, zorder=6)
+        ax2.scatter(topo_rotated[:, 0], topo_rotated[:, 1], c=colour_arr, s=14, linewidths=0)
+        ax2.scatter(*topo_rotated[index_from], color="blue", s=24, zorder=5)
+        ax2.add_patch(plt.Circle(disk_center, disk_radius, color="grey", ls="--", fill=False))
+        ax2.scatter(*disk_center, color="k", s=20)
+        ax2.set_aspect("equal")
+        ax2.set_title("Topographical representation")
+
+        # ax3: height vs angle
+        ax3.axhline(0, color="k", lw=0.8)
+        ax3.axhline(initial_critical_height_protrusion, color="r", ls="--", lw=1.2)
+        ax3.axhline(-initial_critical_height_intrusion, color="g", ls="--", lw=1.2)
+        ax3.scatter(theta_sorted, height_sorted, c=colour_sorted, s=14)
+        ax3.set_xlim(0, 360)
+        ax3.set_xticks(np.arange(0, 361, 45))
+        ax3.set_xlabel("Polar angle (°)")
+        ax3.set_ylabel("Radial height (native units)")
+        ax3.set_title("Topographical height")
+
+        # ax4: FFT
+        ax4.stem(xf, yf, basefmt=" ")
+        ax4.scatter(xf, yf, s=18)
+        ax4.set_xlabel("FFT frequency index")
+        ax4.set_ylabel("Amplitude (norm.)")
+        ax4.set_ylim(0, 1)
+        ax4.set_title("FFT spectrum (scatter)")
+
+        # аннотации
+        ax2.text(0.95, 0.05, f"Protrusions: {num_protr}\nIntrusions: {num_intr}",
+                 transform=ax2.transAxes, ha="right", va="bottom", fontsize=10,
+                 bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
+        ax1.text(0.95, 0.05, f"Max curvature: {np.max(curv):.4f}",
+                 transform=ax1.transAxes, ha="right", va="bottom", fontsize=10,
+                 bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
+        ax1.text(0.95, 0.95, f"Riemann Velocity: {riemann_velocity:.4f}",
+                 transform=ax1.transAxes, ha="right", va="top", fontsize=10,
+                 bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
+
+        fig.tight_layout()
+
+        # конвертируем фигуру → RGB np.ndarray
+        canvas = FigureCanvas(fig)
+        canvas.draw()
+        w, h = fig.get_size_inches() * fig.get_dpi()
+        img = np.frombuffer(canvas.buffer_rgba(), dtype=np.uint8).reshape(int(h), int(w), 4)[:, :, :3]
+        plt.close(fig)
+
+        return img, index_from
+
+    # ---------- создаём writer и гоним кадры ----------
+    # предварительно нарисуем один кадр, чтобы узнать размер
+    test_img, _ = render_frame(0, 0)
+    height, width = test_img.shape[:2]
+    # иногда кодеки требуют чётные размеры
+    width  -= width  % 2
+    height -= height % 2
+    if (test_img.shape[1], test_img.shape[0]) != (width, height):
+        test_img = cv2.resize(test_img, (width, height), interpolation=cv2.INTER_AREA)
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
+
+    try:
+        idx_from = 0
+        for jj in range(len(all_outlines)):
+            frame_img, idx_from = render_frame(jj, idx_from)
+            if (frame_img.shape[1], frame_img.shape[0]) != (width, height):
+                frame_img = cv2.resize(frame_img, (width, height), interpolation=cv2.INTER_AREA)
+            writer.write(cv2.cvtColor(frame_img, cv2.COLOR_RGB2BGR))
+    finally:
+        writer.release()
+
+    print(f"🎬 Video saved: {video_path}")
+
+
 def collect_protrusion_intrusion_stats_by_motion_type(direct, time_events_path):
+                                            #       initial_critical_height_protrusion=6.2338,#6.1495,
+                                            #   initial_critical_height_intrusion=5.1208,#5.0797,
+                                            #   critical_curvature=0.0451,#0.0454,
     image_size = 100
-    critical_curvature = 0.06
-    critical_height =4
+    critical_curvature = 0.0454
+    critical_height_protrusion =6.2338
+    critical_height_intrusion = 5.1208
 
     all_cell_folders = [
         os.path.join(direct, ff)
@@ -1720,7 +2318,9 @@ def collect_protrusion_intrusion_stats_by_motion_type(direct, time_events_path):
 
             motion_data = h5_file[group][:]
             event_indices = motion_data[0, :].astype(int) - 1
-            interval_types = motion_data[2, :]
+            interval_types = motion_data[2, :] 
+            last_time =  motion_data[1, -1].astype(int) - 1
+            event_indices = np.append(event_indices,last_time)
 
             print(f"event_indices {event_indices}")
             print(f"interval_types {interval_types}")
@@ -1869,9 +2469,9 @@ def collect_protrusion_intrusion_stats_by_motion_type(direct, time_events_path):
                     r = (np.sqrt((x - center[0])**2 + (y - center[1])**2) - 25) * 2
                     curvature = curvatures[idx]
 
-                    if r >= critical_height and np.abs(curvature) > np.abs(critical_curvature):
+                    if r >= critical_height_protrusion and np.abs(curvature) > np.abs(critical_curvature):
                         characteristic = "P"
-                    elif r <= -critical_height and np.abs(curvature) > np.abs(critical_curvature):
+                    elif r <= -critical_height_intrusion and np.abs(curvature) > np.abs(critical_curvature):
                         characteristic = "I"
                     else:
                         characteristic = "N"
@@ -1926,6 +2526,8 @@ def collect_protrusion_intrusion_stats_by_motion_type(direct, time_events_path):
                 #print(num_intr)
 
                 stats_by_type[motion_type].append((num_prot, num_intr))
+            print(f"start {start}")
+            print(f"end {end}")
               
 
     # Вывод статистики и расчет стандартного отклонения
@@ -2029,108 +2631,6 @@ def collect_protrusion_intrusion_stats_by_motion_type(direct, time_events_path):
     plt.tight_layout()
     plt.show()
 
-
-
-# def plot_shape_and_topo_3D(direct, cell_number):
-#     all_cell_folders = [
-#         os.path.join(direct, ff) 
-#         for ff in sorted(os.listdir(direct), key=lambda x: int(x.split('_')[1]) if '_' in x and x.split('_')[1].isdigit() else 0)
-#     ]
-
-#     all_outlines, _, all_topo, _, _, _, fin_times = conformal_representation(all_cell_folders[cell_number])
-
-#     fig = plt.figure(figsize=(16, 8))
-#     ax1 = fig.add_subplot(121, projection='3d')  # Outline
-#     ax2 = fig.add_subplot(122, projection='3d')  # Topography
-#     fig.suptitle(f"Cell {cell_number}: 3D Shape and Topographical Evolution", fontsize=16)
-
-#     image_size = 200
-
-#     for jj in range(len(all_outlines)):
-#         outline = all_outlines[jj]
-#         topo = all_topo[jj]
-#         time = fin_times[jj]
-
-#         # Масштабируем outline
-#         for i in range(2):
-#             min_val = np.min(outline[:, i])
-#             max_val = np.max(outline[:, i])
-#             outline[:, i] = (outline[:, i] - min_val) / (max_val - min_val) * (image_size - 1)
-
-#         # Масштабируем topography_coords_disk
-#         topo[:, 0] = (topo[:, 0] + image_size) / 2
-#         topo[:, 1] = (topo[:, 1] + image_size) / 2
-
-#         # Сегментация для topography
-#         rr, cc = polygon(topo[:, 1], topo[:, 0], shape=(image_size, image_size))
-#         binary_image = np.zeros((image_size, image_size), dtype=np.uint8)
-#         binary_image[rr, cc] = 1
-
-#         circle_center_new = ((0 + image_size_tuple[1]) / 2, (0 + image_size_tuple[0]) / 2)
-#         circle_radius_new = 50 / 2
-#         circle_mask = np.zeros_like(binary_image)
-#         rr1, cc1 = disk(circle_center_new, circle_radius_new, shape=image_size_tuple)
-#         circle_mask[rr1, cc1] = 1
-
-
-#         protrusions = np.logical_and(binary_image, np.logical_not(circle_mask))
-#         intrusions = np.logical_and(np.logical_not(binary_image), circle_mask)
-
-#         dist_prot = gaussian_filter(distance_transform_edt(protrusions), sigma=1.0)
-#         dist_intr = gaussian_filter(distance_transform_edt(intrusions), sigma=1.0)
-
-#         max_prot = peak_local_max(dist_prot, footprint=np.ones((3, 3)), labels=protrusions, min_distance=10)
-#         max_intr = peak_local_max(dist_intr, footprint=np.ones((3, 3)), labels=intrusions, min_distance=10)
-
-#         mask_prot = np.zeros_like(dist_prot, dtype=bool)
-#         mask_prot[tuple(max_prot.T)] = True
-#         markers_prot, _ = ndi.label(mask_prot)
-
-#         mask_intr = np.zeros_like(dist_intr, dtype=bool)
-#         mask_intr[tuple(max_intr.T)] = True
-#         markers_intr, _ = ndi.label(mask_intr)
-
-#         labels_prot = watershed(-dist_prot, markers_prot, mask=protrusions)
-#         labels_intr = watershed(-dist_intr, markers_intr, mask=intrusions)
-
-#         # Построим color_by_index
-#         color_by_index = {}
-#         for idx, coord in enumerate(topo):
-#             x, y = np.round(coord).astype(int)
-#             if 0 <= y < image_size and 0 <= x < image_size:
-#                 if labels_prot[y, x] > 0:
-#                     color_by_index[idx] = (1.0, 0.0, 0.0)
-#                 elif labels_intr[y, x] > 0:
-#                     color_by_index[idx] = (0.0, 1.0, 0.0)
-#                 else:
-#                     color_by_index[idx] = (0.0, 0.0, 0.0)
-
-#         # === Outline view (ax1)
-#         z = np.full(len(outline), time)
-#         for idx, (x, y) in enumerate(outline):
-#             color = color_by_index.get(idx, (1.0, 1.0, 1.0))  # белый — если нет цвета
-#             ax1.plot([x], [y], [z[idx]], marker='o', markersize=2, color=color)
-
-#         # === Topographical view (ax2)
-#         for idx, (x, y) in enumerate(topo):
-#             color = color_by_index.get(idx, (1.0, 1.0, 1.0))
-#             ax2.plot([x], [y], [time], marker='o', markersize=2, color=color)
-
-#     # Настройки графиков
-#     for ax, label in zip([ax1, ax2], ["Outline Representation", "Topographical Representation"]):
-#         ax.set_xlabel("X")
-#         ax.set_ylabel("Y")
-#         ax.set_zlabel("Time")
-#         ax.set_title(label)
-    
-#     for ax, label in zip([ax3], ["Outline Representation", "Topographical Representation"]):
-#         ax.set_xlabel("X")
-#         ax.set_ylabel("Y")
-#         ax.set_zlabel("Time")
-#         ax.set_title(label)
-
-#     plt.tight_layout()
-#     plt.show()
 
 
 
@@ -2304,6 +2804,99 @@ def fft_spare_l2_matrix_whole_dataset(direct, migration_types_to_keep=["Free Dif
     plt.legend(handles=legend_handles, title="Migration Type", bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
     plt.savefig(f"fourier_matrix_filtered_umap_new.png")
+def visualize_l2_umap_from_npy(
+    direct,
+    l2_matrix_path,
+    migration_types_to_keep=["Free Diffusion", "Confined Diffusion", "Immobile", "Directed Diffusion", "Unclassified"],
+    save_name="fourier_l2_NO_fourier_all.png"
+):
+    import os
+    import numpy as np
+    import h5py
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    import umap
+
+    strict_color_map = {
+        "Immobile": "#b10000",
+        "Confined Diffusion": "#6600cc",
+        "Free Diffusion": "#00e5ff",
+        "Directed Diffusion": "#ff00ff",
+        "Unclassified": "#000000"
+    }
+
+    label_map = {
+        1: "Immobile",
+        2: "Confined Diffusion",
+        3: "Free Diffusion",
+        4: "Directed Diffusion",
+        "unclassified": "Unclassified"
+    }
+
+    l2_matrix = np.load(l2_matrix_path)
+    migration_type = []
+
+    all_cell_folders = [
+        os.path.join(direct, ff)
+        for ff in sorted(os.listdir(direct), key=lambda x: int(x.split('_')[1]) if '_' in x and x.split('_')[1].isdigit() else 0)
+    ]
+
+    time_events_path = "/home/pavel/cell_morphology/filtered_data/time_events_filtered.h5"
+    with h5py.File(time_events_path, 'r') as h5_file:
+        for cell_number, cell_path in enumerate(all_cell_folders):
+            num_frames = len(np.sort(os.listdir(cell_path)))
+            group = f"/track_{cell_number + 1}"
+            if group not in h5_file:
+                print(f"Skipping {group} (no data)")
+                continue
+
+            motion_data = h5_file[group][:]
+            event_indices = motion_data[0, :].astype(int) - 1
+            interval_types = motion_data[2, :]
+            last_time =  motion_data[1, -1].astype(int) - 1
+            event_indices = np.append(event_indices,last_time)
+
+            for jj in range(num_frames):
+                motion_type = "unclassified"
+                for k in range(len(interval_types)):
+                    raw_type = interval_types[k]
+                    start = event_indices[k] if k == 0 else event_indices[k] + 1
+                    end = event_indices[k + 1] if k < len(event_indices) - 1 else num_frames - 1
+                    if start <= jj <= end:
+                        motion_type = int(raw_type) + 1 if not np.isnan(raw_type) else "unclassified"
+                        break
+
+                label = label_map[motion_type]
+                migration_type.append(label)
+
+    # Фильтрация
+    indices_to_keep = [i for i, label in enumerate(migration_type) if label in migration_types_to_keep]
+    filtered_l2_matrix = l2_matrix[np.ix_(indices_to_keep, indices_to_keep)]
+    filtered_labels = [migration_type[i] for i in indices_to_keep]
+
+    # UMAP
+    reducer = umap.UMAP(metric="precomputed", random_state=42)
+    embedding = reducer.fit_transform(filtered_l2_matrix)
+
+    # Цвета
+    colors = [strict_color_map[label] for label in filtered_labels]
+
+    # Визуализация
+    plt.figure(figsize=(10, 8))
+    plt.scatter(embedding[:, 0], embedding[:, 1], c=colors, s=10)
+    plt.title("UMAP Projection Colored by Migration Type", fontsize=16)
+    plt.gca().set_aspect('equal', 'datalim')
+
+    # Легенда
+    legend_handles = [
+        mpatches.Patch(color=strict_color_map[label], label=label)
+        for label in migration_types_to_keep if label in strict_color_map
+    ]
+    plt.legend(handles=legend_handles, title="Migration Type", bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.savefig(save_name)
+    plt.show()
+    plt.close()
 
 def fft_spare_l2_matrix_whole_dataset_cutted(direct, l2_matrix_path, migration_types_to_keep=["Free Diffusion", "Confined Diffusion"]):
     label_map = {
@@ -2879,150 +3472,134 @@ def generate_umap_pdf_for_all_cells(direct, h5_path, output_pdf_path):
 
 
 
-def count_protrusions_and_intrusions_full(topography_coords_disk, curvatures,
-                                           outline=None, centr=None, fin_times=None,
-                                           image_size=100,
-                                           critical_curvature=0.0454,
-                                           critical_height_protrusion=6.1495,
-                                           critical_height_intrusion=5.0797,
-                                           circle_radius=25,
-                                           stride_fill=10,
-                                           stride_filter=5,
-                                           frame_index=0):
-    # Step 1: Smooth topo
-    topography_coords_disk = smooth_topo(topography_coords_disk)
+def count_protrusions_and_intrusions_standard(topo_coords, curvatures,
+                                              disk_center, disk_radius,
+                                              initial_critical_height_protrusion=6.2338,#6.1495,
+                                              initial_critical_height_intrusion=5.1208,#5.0797,
+                                              critical_curvature=0.0451,#0.0454,
+                                              stride_fill=10,
+                                              stride_short=5):
+    n_pts = len(topo_coords)
 
-    # Step 2: Determine index_from for angular alignment
-    index_from = 0
-    if frame_index > 0 and outline is not None and centr is not None and fin_times is not None:
-        index_from = op_index(outline[frame_index - 1], outline[frame_index], 0)
+    topo_coords = smooth_topo(topo_coords.copy())
+    topo_height = np.linalg.norm(topo_coords - disk_center, axis=1) - disk_radius
 
-    theta = np.arctan2(topography_coords_disk[index_from][0], topography_coords_disk[index_from][1])
-    R = np.array([[np.cos(theta), -np.sin(theta)],
-                  [np.sin(theta),  np.cos(theta)]])
+    WHITE = (1.0, 1.0, 1.0)
+    RED   = (1.0, 0.0, 0.0)
+    GREEN = (0.0, 1.0, 0.0)
+    colour = [WHITE] * n_pts
+    for idx, h in enumerate(topo_height):
+        if h > 0:
+            colour[idx] = RED
+        elif h < 0:
+            colour[idx] = GREEN
 
-    # Step 3: Shift and rotate into standard frame
-    coords = (topography_coords_disk + image_size) / 2
-    center = np.array([image_size / 2, image_size / 2])
-    coords = (coords - center) @ R.T + center
-
-    rr, cc = polygon(coords[:, 1], coords[:, 0], shape=(image_size, image_size))
-    binary_image = np.zeros((image_size, image_size), dtype=np.uint8)
-    binary_image[rr, cc] = 1
-
-    circle_mask = np.zeros_like(binary_image)
-    rr1, cc1 = disk((image_size // 2, image_size // 2), circle_radius, shape=binary_image.shape)
-    circle_mask[rr1, cc1] = 1
-
-    protrusions = np.logical_and(binary_image, ~circle_mask)
-    intrusions = np.logical_and(~binary_image, circle_mask)
-
-    def segment_region(region_mask, label_color, height_sign, height_thresh):
-        distance_map = gaussian_filter(distance_transform_edt(region_mask), sigma=1.0)
-        local_maxi = peak_local_max(distance_map, footprint=np.ones((3, 3)), labels=region_mask, min_distance=10)
-        mask = np.zeros(distance_map.shape, dtype=bool)
-        mask[tuple(local_maxi.T)] = True
-        markers, _ = ndi.label(mask)
-        labels = watershed(-distance_map, markers, mask=region_mask)
-
-        color_by_index = {}
-        for idx, coord in enumerate(coords):
-            x, y = np.round(coord).astype(int)
-            if 0 <= y < image_size and 0 <= x < image_size:
-                if labels[y, x] > 0:
-                    color_by_index[idx] = label_color
-                else:
-                    color_by_index[idx] = (1.0, 1.0, 1.0)
-            else:
-                color_by_index[idx] = (1.0, 1.0, 1.0)
-
-        length = len(color_by_index)
-
-        # Fill small gaps
-        changed = True
-        while changed:
-            changed = False
-            color_copy = color_by_index.copy()
-            for i in range(length):
-                if color_copy[i] == (1.0, 1.0, 1.0):
-                    prev_color = color_copy[(i - 1) % length]
-                    for offset in range(1, stride_fill + 1):
-                        forward_idx = (i + offset) % length
-                        forward_color = color_copy[forward_idx]
-                        if forward_color != (1.0, 1.0, 1.0):
-                            if forward_color == prev_color:
-                                for z in range(offset):
-                                    idx_to_paint = (i + z) % length
-                                    if color_by_index[idx_to_paint] == (1.0, 1.0, 1.0):
-                                        color_by_index[idx_to_paint] = prev_color
-                                        changed = True
-                            break
-
-        # Remove short segments
-        color_copy = color_by_index.copy()
-        i = 0
-        while i < length:
-            current_color = color_copy[i]
-            if current_color == label_color:
-                segment_length = 0
-                while segment_length < length and color_copy[(i + segment_length) % length] == label_color:
-                    segment_length += 1
-                if segment_length < stride_filter:
-                    for j in range(segment_length):
-                        color_copy[(i + j) % length] = (1.0, 1.0, 1.0)
-                i += segment_length
-            else:
-                i += 1
-        color_by_index = color_copy
-
-        # Assign criteria based on height and curvature
-        criteria_index = {}
-        for idx, coord in enumerate(coords):
-            r = (np.linalg.norm(coord - center) - circle_radius) * 2
-            curvature = curvatures[idx]
-            if height_sign * r >= height_thresh and abs(curvature) > abs(critical_curvature):
-                criteria_index[idx] = True
-            else:
-                criteria_index[idx] = False
-
-        # Filter segments without qualifying criteria
-        color_copy = color_by_index.copy()
-        i = 0
-        while i < length:
-            current_color = color_copy[i]
-            if current_color == label_color:
-                segment_indices = []
-                has_important = False
-                segment_length = 0
-                while segment_length < length:
-                    idx = (i + segment_length) % length
-                    if color_copy[idx] == current_color:
-                        segment_indices.append(idx)
-                        if criteria_index.get(idx):
-                            has_important = True
-                        segment_length += 1
-                    else:
+    # Fill small gaps
+    changed = True
+    while changed:
+        changed = False
+        for i in range(n_pts):
+            if colour[i] == WHITE:
+                prev_col = colour[(i - 1) % n_pts]
+                for off in range(1, stride_fill + 1):
+                    fwd_idx = (i + off) % n_pts
+                    fwd_col = colour[fwd_idx]
+                    if fwd_col != WHITE:
+                        if fwd_col == prev_col:
+                            for z in range(off):
+                                idx_paint = (i + z) % n_pts
+                                if colour[idx_paint] == WHITE:
+                                    colour[idx_paint] = prev_col
+                                    changed = True
                         break
-                if not has_important:
-                    for idx_to_white in segment_indices:
-                        color_copy[idx_to_white] = (1.0, 1.0, 1.0)
-                i += segment_length
-            else:
-                i += 1
 
-        # Final count
-        color_by_index = color_copy
-        colors = [color_by_index[i] for i in range(length)]
-        count = 0
-        for i in range(length):
-            if colors[i] == label_color and colors[(i - 1) % length] != label_color:
-                count += 1
-        return count
+    # Remove short segments
+    i = 0
+    while i < n_pts:
+        col = colour[i]
+        if col in (RED, GREEN):
+            j = 0
+            while colour[(i + j) % n_pts] == col and j < n_pts:
+                j += 1
+            if j < stride_short:
+                for k in range(j):
+                    colour[(i + k) % n_pts] = WHITE
+            i += j
+        else:
+            i += 1
 
-    num_protrusions = segment_region(protrusions, (1.0, 0.0, 0.0), 1, critical_height_protrusion)
-    num_intrusions = segment_region(intrusions, (0.0, 1.0, 0.0), -1, critical_height_intrusion)
+    # Apply curvature and height-based criteria
+    criteria = []
+    for r, curv in zip(topo_height, curvatures):
+        if r > initial_critical_height_protrusion and abs(curv) > abs(critical_curvature):
+            criteria.append("P")
+        elif r < -initial_critical_height_intrusion and abs(curv) > abs(critical_curvature):
+            criteria.append("I")
+        else:
+            criteria.append("N")
 
-    return num_protrusions, num_intrusions
+    i = 0
+    while i < n_pts:
+        col = colour[i]
+        if col in (RED, GREEN):
+            seg_idx = []
+            has_PI = False
+            j = 0
+            while colour[(i + j) % n_pts] == col and j < n_pts:
+                idx_curr = (i + j) % n_pts
+                seg_idx.append(idx_curr)
+                if criteria[idx_curr] in ("P", "I"):
+                    has_PI = True
+                j += 1
+            if not has_PI:
+                for idx_blank in seg_idx:
+                    colour[idx_blank] = WHITE
+            i += j
+        else:
+            i += 1
+
+    # Count transitions from non-colored to colored segments
+    num_protr, num_intr = 0, 0
+    for i in range(n_pts):
+        cur = colour[i]
+        prev = colour[(i - 1) % n_pts]
+        if cur == RED and prev != RED:
+            num_protr += 1
+        if cur == GREEN and prev != GREEN:
+            num_intr += 1
+
+    return num_protr, num_intr
+
+
+def count_peaks_fourier(topo_coords, disk_center, disk_radius, index_from):
+    topo_coords = smooth_topo(topo_coords.copy())
+    topo_height = np.linalg.norm(topo_coords - disk_center, axis=1) - disk_radius
+
+    theta_ref = np.arctan2(
+        topo_coords[index_from][0] - disk_center[0],
+        topo_coords[index_from][1] - disk_center[1],
+    )
+    theta_raw = np.arctan2(
+        topo_coords[:, 0] - disk_center[0],
+        topo_coords[:, 1] - disk_center[1],
+    )
+    theta_deg = np.degrees((theta_raw - theta_ref) % (2 * np.pi))
+
+    sort_idx = np.argsort(theta_deg)
+    theta_sorted = theta_deg[sort_idx]
+    height_sorted = topo_height[sort_idx]
+
+    xf, yf = fft_transformation(theta_sorted, height_sorted, 30)
+    xf, yf = np.asarray(xf), np.asarray(yf)
+    m = min(len(xf), len(yf))
+    xf, yf = xf[:m], yf[:m]
+    from scipy.signal import find_peaks
+    peak_indices, _ = find_peaks(yf, prominence=0.05)
+    if len(peak_indices) == 0:
+        return -1  # no peak found
+
+    dominant_peak_idx = peak_indices[np.argmax(yf[peak_indices])]
+    return float(xf[dominant_peak_idx])
 
 def compute_and_save_all_protrusions_and_intrusions(data_dir, output_path):
     cell_dirs = sorted(
@@ -3032,25 +3609,244 @@ def compute_and_save_all_protrusions_and_intrusions(data_dir, output_path):
 
     with h5py.File(output_path, 'w') as h5file:
         for cell_idx, cell_path in enumerate(cell_dirs, start=1):
-            if(cell_idx!=204):
-                continue
+
             group = h5file.create_group(f'cell_{cell_idx}')
-            all_outlines, _, all_topo, all_curvatures, _, centr, fin_times = conformal_representation(cell_path)
+            all_outlines, _, all_topo, all_curvatures, disk_coors, _, _ = conformal_representation(cell_path)
+            disk_center = np.mean(disk_coors, axis=0)
+            disk_radius = np.mean(np.linalg.norm(disk_coors - disk_center, axis=1))
+
+            index_from = 0
             for frame_idx, (topo_coords, curvs) in enumerate(zip(all_topo, all_curvatures)):
-                n_protrusions, n_intrusions = count_protrusions_and_intrusions_full(
+                if frame_idx > 0:
+                    index_from = op_index(all_outlines[frame_idx - 1], all_outlines[frame_idx], index_from)
+
+                n_protrusions, n_intrusions = count_protrusions_and_intrusions_standard(
                     topo_coords, curvs,
-                    outline=all_outlines,
-                    centr=centr,
-                    fin_times=fin_times,
-                    frame_index=frame_idx
+                    disk_center=disk_center,
+                    disk_radius=disk_radius
                 )
+
+                main_freq = count_peaks_fourier(
+                    topo_coords,
+                    disk_center=disk_center,
+                    disk_radius=disk_radius,
+                    index_from=index_from
+                )
+
                 frame_group = group.create_group(f'frame_{frame_idx + 1}')
                 frame_group.create_dataset('protrusions', data=n_protrusions)
                 frame_group.create_dataset('intrusions', data=n_intrusions)
+                frame_group.create_dataset('fft_main_peak', data=main_freq)
 
-    print(f"Saved qualified protrusion and intrusion counts to {output_path}")
 
-def generate_umap_pdf_with_trajectories(direct, h5_path, output_pdf_path):
+def generate_umap_pdf_with_trajectories(
+    direct: str,
+    h5_path: str,
+    output_pdf_path: str,
+    plots_per_page: int = 6,
+    cols: int = 4,
+    rows: int = 3,
+    k_sampling_points: int = 200,
+    random_state: int = 42,
+    rescale: bool = False,
+    rotation: bool = False,
+    reparameterization: bool = False,
+):
+    """
+    Делает PDF: для каждой клетки два подграфика — UMAP по OT-дистанциям между кадрами (слева)
+    и траектория центроидов с раскраской по времени (справа).
+    Никаких FFT/топографии и лишней логики — только OT + траектории/цвета.
+
+    Требуется, чтобы существовали функции:
+      conformal_representation(cell_path) -> (all_outlines, _, _, _, _, centr, fin_times)
+      interpolate(outline, k_sampling_points)
+      preprocess(curve)
+      align(curve_i, curve_j, rescale, rotation, reparameterization, k_sampling_points) -> (ai, aj)
+      compute_Wass_distance(ai, aj)
+
+    Аргументы rescale/rotation/reparameterization передаются в align ровно как у вас.
+    """
+    # проверка сетки: на одну клетку — 2 оси, значит rows*cols должно быть >= 2*plots_per_page
+    assert rows * cols >= 2 * plots_per_page, "rows*cols должно быть не меньше 2*plots_per_page"
+
+    with PdfPages(output_pdf_path) as pdf, h5py.File(h5_path, "r") as h5_file:
+        # cell_1 .. cell_121 (по вашему исходнику 1..121 включительно)
+        all_cell_folders = [os.path.join(direct, f"cell_{i}") for i in range(1, 122)]
+        total_cells = len(all_cell_folders)
+
+        for page_start in range(0, total_cells, plots_per_page):
+            fig, axes = plt.subplots(rows, cols, figsize=(11.69, 8.27))  # A4 landscape
+            axes = axes.flatten()
+
+            # для легенды на первой UMAP-оси страницы
+            put_legend_once = True
+
+            for i in range(plots_per_page):
+                plot_index = page_start + i
+                # индексы осей под «пару графиков» i-й клетки
+                umap_ax_idx = 2 * i
+                traj_ax_idx = 2 * i + 1
+
+                # если выходим за число осей — просто break (на случай непарной сетки)
+                if umap_ax_idx >= len(axes) or traj_ax_idx >= len(axes):
+                    break
+
+                ax_umap = axes[umap_ax_idx]
+                ax_traj = axes[traj_ax_idx]
+
+                if plot_index >= total_cells:
+                    ax_umap.axis('off')
+                    ax_traj.axis('off')
+                    continue
+
+                cell_path = all_cell_folders[plot_index]
+                cell_number = plot_index + 1
+                group = f"/track_{cell_number}"
+
+                # если нет папки клетки или H5-группы для меток — строим без меток (Unclassified)
+                if not os.path.isdir(cell_path):
+                    ax_umap.axis('off')
+                    ax_traj.axis('off')
+                    continue
+
+                # ── 1) контуры/центроиды/время ─────────────────────────────────────
+                try:
+                    (
+                        all_outlines,   # list of (Ni x 2)
+                        _,
+                        _,
+                        _,
+                        _,
+                        centr,          # [T x 2]
+                        fin_times,      # [T]
+                    ) = conformal_representation(cell_path)
+                except Exception as e:
+                    ax_umap.text(0.5, 0.5, f"Error:\n{e}", ha="center", va="center", fontsize=6)
+                    ax_umap.axis('off')
+                    ax_traj.axis('off')
+                    continue
+
+                T = len(all_outlines)
+                if T < 2:
+                    ax_umap.axis('off')
+                    ax_traj.axis('off')
+                    continue
+
+                # ── 2) метки миграции по кадрам ────────────────────────────────────
+                labels = ["Unclassified"] * T
+                if group in h5_file:
+                    try:
+                        motion_data = h5_file[group][:]  # ожидается (>=3, K)
+                        event_indices = motion_data[0, :].astype(int) - 1
+                        interval_types = motion_data[2, :]
+                        for jj in range(T):
+                            motion_type = "unclassified"
+                            K = len(interval_types)
+                            for k in range(K):
+                                raw_type = interval_types[k]
+                                if k < len(event_indices) - 1:
+                                    start = event_indices[k] if k == 0 else event_indices[k] + 1
+                                    end = event_indices[k + 1]
+                                else:
+                                    start = event_indices[k] if k == 0 else event_indices[k] + 1
+                                    end = T - 1
+                                if start <= jj <= end:
+                                    motion_type = int(raw_type) + 1 if not np.isnan(raw_type) else "unclassified"
+                                    break
+                            labels[jj] = LABEL_MAP.get(motion_type, "Unclassified")
+                    except Exception:
+                        # оставим как Unclassified, если формат неожиданный
+                        pass
+
+                colors = [STRICT_COLOR_MAP.get(lbl, STRICT_COLOR_MAP["Unclassified"]) for lbl in labels]
+
+                # ── 3) препроцессинг кривых ────────────────────────────────────────
+                preproc = []
+                for outline in all_outlines:
+                    interp = interpolate(outline, k_sampling_points)
+                    preproc.append(preprocess(interp))
+
+                # ── 4) попарная OT-матрица ─────────────────────────────────────────
+                l2_matrix = np.zeros((T, T), dtype=float)
+                for a in range(T):
+                    for b in range(a + 1, T):
+                        ai, aj = align(
+                            preproc[a],
+                            preproc[b],
+                            rescale=rescale,
+                            rotation=rotation,
+                            reparameterization=reparameterization,
+                            k_sampling_points=k_sampling_points,
+                        )
+                        dist = compute_Wass_distance(ai, aj)  # ваша реализация
+                        l2_matrix[a, b] = dist
+                        l2_matrix[b, a] = dist
+
+                # ── 5) UMAP по предвычисленной метрике ─────────────────────────────
+                reducer = umap.UMAP(metric="precomputed", random_state=random_state)
+                embedding = reducer.fit_transform(l2_matrix)
+
+                # ── 6) Рисуем UMAP (слева) ─────────────────────────────────────────
+                ax_umap.scatter(embedding[:, 0], embedding[:, 1], c=colors, s=10)
+                ax_umap.set_title(f"Cell {cell_number}", fontsize=8)
+                ax_umap.set_xticks([])
+                ax_umap.set_yticks([])
+                ax_umap.set_aspect('equal', 'datalim')
+
+                if put_legend_once:
+                    legend_handles = [
+                        Line2D([0], [0], color=color, lw=6, label=label)
+                        for label, color in STRICT_COLOR_MAP.items()
+                    ]
+                    ax_umap.legend(handles=legend_handles, title="Migration Type", fontsize=6, title_fontsize=7)
+                    put_legend_once = False
+
+                # ── 7) Рисуем траекторию (справа) ─────────────────────────────────
+                centroids = np.array(centr)
+                times = np.array(fin_times)
+                if centroids.ndim == 2 and centroids.shape[0] >= 2:
+                    x_coords = centroids[:, 0]
+                    y_coords = centroids[:, 1]
+                    sc = ax_traj.scatter(
+                        x_coords[1:], y_coords[1:],
+                        c=times[1:],
+                        cmap='plasma',
+                        marker='o',
+                        edgecolor='k',
+                        s=40,
+                        alpha=0.7
+                    )
+                    ax_traj.scatter(
+                        x_coords[0], y_coords[0],
+                        c='black', marker='o', edgecolor='k', s=50, alpha=0.9, label='Start'
+                    )
+                    ax_traj.plot(x_coords, y_coords, linestyle='-', color='gray', alpha=0.5)
+                    ax_traj.set_title("Trajectory", fontsize=8)
+                    ax_traj.set_xlabel("X", fontsize=6)
+                    ax_traj.set_ylabel("Y", fontsize=6)
+                    ax_traj.tick_params(axis='both', which='major', labelsize=6)
+
+                    cbar = fig.colorbar(sc, ax=ax_traj, orientation='vertical', fraction=0.046, pad=0.04)
+                    cbar.set_label("Time", rotation=270, labelpad=8, fontsize=6)
+                    cbar.ax.tick_params(labelsize=6)
+                else:
+                    ax_traj.axis('off')
+
+            # погасим лишние оси, если сетка больше, чем нужно
+            for k in range(2 * plots_per_page, rows * cols):
+                axes[k].axis('off')
+
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close(fig)
+
+    print(f"Saved to: {output_pdf_path}")
+
+
+
+
+
+def generate_umap_pdf_with_trajectories_numbered(direct, h5_path, output_pdf_path):
     import os
     import numpy as np
     import h5py
@@ -3059,9 +3855,9 @@ def generate_umap_pdf_with_trajectories(direct, h5_path, output_pdf_path):
     from matplotlib.lines import Line2D
     import umap
 
-    plots_per_page = 6
-    cols= 4#3
-    rows = 3#(plots_per_page * 2 + cols - 1) // cols
+    plots_per_page = 1
+    cols = 2
+    rows = 1
 
     strict_color_map = {
         "Immobile": "#b10000",
@@ -3080,11 +3876,11 @@ def generate_umap_pdf_with_trajectories(direct, h5_path, output_pdf_path):
     }
 
     with PdfPages(output_pdf_path) as pdf, h5py.File(h5_path, 'r') as h5_file:
-        all_cell_folders = [os.path.join(direct, f"cell_{i}") for i in range(1, 205)]
+        all_cell_folders = [os.path.join(direct, f"cell_{i}") for i in range(1, 122)]
         total_plots = len(all_cell_folders)
 
         for page_start in range(0, total_plots, plots_per_page):
-            fig, axes = plt.subplots(rows, cols, figsize=(11.69, 8.27)) #fig, axes = plt.subplots(rows, cols, figsize = (cols * 2, rows * 2.5))  # A4 landscape
+            fig, axes = plt.subplots(rows, cols, figsize=(11.69, 8.27))
             axes = axes.flatten()
 
             for i in range(plots_per_page):
@@ -3163,6 +3959,167 @@ def generate_umap_pdf_with_trajectories(direct, h5_path, output_pdf_path):
                 embedding = reducer.fit_transform(l2_matrix)
                 color_list = [strict_color_map[label] for label in migration_type]
 
+                for idx, (x, y) in enumerate(embedding):
+                    ax_umap.scatter(x, y, c=color_list[idx], s=10)
+                    ax_umap.text(x + 0.1, y + 0.1, str(idx), fontsize=5)
+
+                ax_umap.set_title(f"Cell {cell_number}", fontsize=8)
+                ax_umap.set_xticks([])
+                ax_umap.set_yticks([])
+                ax_umap.set_aspect('equal', 'datalim')
+
+                if i == 0:
+                    legend_handles = [
+                        Line2D([0], [0], color=color, lw=6, label=label)
+                        for label, color in strict_color_map.items()
+                    ]
+                    ax_umap.legend(handles=legend_handles, title="Migration Type", fontsize=6, title_fontsize=7)
+
+                # Trajectory plot with UMAP index as color
+                centroids = np.array(centr)
+                if centroids.ndim == 2 and len(embedding) == len(centroids):
+                    x_coords = centroids[:, 0]
+                    y_coords = centroids[:, 1]
+                    umap_indices = np.arange(len(embedding))
+
+                    scatter = ax_traj.scatter(
+                        x_coords, y_coords,
+                        c=umap_indices,
+                        cmap='viridis',
+                        marker='o',
+                        edgecolor='k',
+                        s=40,
+                        alpha=0.7
+                    )
+                    ax_traj.plot(x_coords, y_coords, linestyle='-', color='gray', alpha=0.5)
+                    ax_traj.set_title("Trajectory (by UMAP index)", fontsize=8)
+                    ax_traj.set_xlabel("X", fontsize=6)
+                    ax_traj.set_ylabel("Y", fontsize=6)
+                    ax_traj.tick_params(axis='both', which='major', labelsize=6)
+
+                    cbar = fig.colorbar(scatter, ax=ax_traj, orientation='vertical', fraction=0.046, pad=0.04)
+                    cbar.set_label("UMAP Index", rotation=270, labelpad=8, fontsize=6)
+                    cbar.ax.tick_params(labelsize=6)
+                else:
+                    ax_traj.axis('off')
+
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close(fig)
+
+def generate_umap_pdf_with_timeline(direct, h5_path, output_pdf_path):
+    import os
+    import numpy as np
+    import h5py
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+    from matplotlib.lines import Line2D
+    import umap
+
+    plots_per_page = 6
+    cols = 4
+    rows = 3
+
+    strict_color_map = {
+        "Immobile": "#b10000",
+        "Confined Diffusion": "#6600cc",
+        "Free Diffusion": "#00e5ff",
+        "Directed Diffusion": "#ff00ff",
+        "Unclassified": "#000000"
+    }
+
+    label_map = {
+        1: "Immobile",
+        2: "Confined Diffusion",
+        3: "Free Diffusion",
+        4: "Directed Diffusion",
+        "unclassified": "Unclassified"
+    }
+
+    with PdfPages(output_pdf_path) as pdf, h5py.File(h5_path, 'r') as h5_file:
+        all_cell_folders = [os.path.join(direct, f"cell_{i}") for i in range(1, 205)]
+        total_plots = len(all_cell_folders)
+
+        for page_start in range(0, total_plots, plots_per_page):
+            fig, axes = plt.subplots(rows, cols, figsize=(11.69, 8.27))  # A4 landscape
+            axes = axes.flatten()
+
+            for i in range(plots_per_page):
+                plot_index = page_start + i
+                if plot_index >= total_plots:
+                    axes[2 * i].axis('off')
+                    axes[2 * i + 1].axis('off')
+                    continue
+
+                ax_umap = axes[2 * i]
+                ax_l2plot = axes[2 * i + 1]
+
+                cell_path = all_cell_folders[plot_index]
+                cell_number = plot_index + 1
+                group = f"/track_{cell_number}"
+
+                if not os.path.exists(cell_path) or group not in h5_file:
+                    ax_umap.axis('off')
+                    ax_l2plot.axis('off')
+                    continue
+
+                all_outlines, _, all_topo, _, _, centr, fin_times = conformal_representation(cell_path)
+                num = len(all_outlines)
+
+                motion_data = h5_file[group][:]
+                event_indices = motion_data[0, :].astype(int) - 1
+                interval_types = motion_data[2, :]
+
+                fft_spectra = []
+                migration_type = []
+
+                for jj in range(num):
+                    motion_type = "unclassified"
+                    for k in range(len(interval_types)):
+                        raw_type = interval_types[k]
+                        if k < len(event_indices) - 1:
+                            start = event_indices[k] if k == 0 else event_indices[k] + 1
+                            end = event_indices[k + 1]
+                        else:
+                            start = event_indices[k] if k == 0 else event_indices[k] + 1
+                            end = num - 1
+                        if start <= jj <= end:
+                            motion_type = int(raw_type) + 1 if not np.isnan(raw_type) else "unclassified"
+                            break
+                    motion_label = label_map[motion_type]
+
+                    topography_coords_disk = smooth_topo(all_topo[jj])
+                    index_from = op_index(all_outlines[jj - 1], all_outlines[jj], 0) if jj > 0 else 0
+                    theta_zero_index = np.arctan2(topography_coords_disk[index_from][0], topography_coords_disk[index_from][1])
+                    theta_topo = np.arctan2(topography_coords_disk[:, 0], topography_coords_disk[:, 1])
+                    theta_3 = np.degrees((theta_topo - theta_zero_index) % (2 * np.pi))
+                    topo_height = np.sqrt((topography_coords_disk[:, 0])**2 + (topography_coords_disk[:, 1])**2) - 50
+                    theta_3, topo_height = zip(*sorted(zip(theta_3, topo_height)))
+                    topo_height = np.array(topo_height)
+
+                    xf, yf = fft_transformation(theta_3, topo_height, 30)
+                    fft_spectra.append((xf, yf))
+                    migration_type.append(motion_label)
+
+                if not fft_spectra:
+                    ax_umap.axis('off')
+                    ax_l2plot.axis('off')
+                    continue
+
+                total = len(fft_spectra)
+                l2_matrix = np.zeros((total, total))
+                for m in range(total):
+                    for n in range(m, total):
+                        xf_i, yf_i = fft_spectra[m]
+                        xf_j, yf_j = fft_spectra[n]
+                        norm = l2_fourier(xf_i, yf_i, xf_j, yf_j)
+                        l2_matrix[m, n] = norm
+                        l2_matrix[n, m] = norm
+
+                reducer = umap.UMAP(metric="precomputed", random_state=42)
+                embedding = reducer.fit_transform(l2_matrix)
+                color_list = [strict_color_map[label] for label in migration_type]
+
                 ax_umap.scatter(embedding[:, 0], embedding[:, 1], c=color_list, s=10)
                 ax_umap.set_title(f"Cell {cell_number}", fontsize=8)
                 ax_umap.set_xticks([])
@@ -3176,59 +4133,897 @@ def generate_umap_pdf_with_trajectories(direct, h5_path, output_pdf_path):
                     ]
                     ax_umap.legend(handles=legend_handles, title="Migration Type", fontsize=6, title_fontsize=7)
 
-                # Trajectory plot
-                centroids = np.array(centr)
-                if centroids.ndim == 2 and centroids.shape[0] >= 2:
-                    x_coords = centroids[:, 0]
-                    y_coords = centroids[:, 1]
+                # Plot L2 vs Time
+                if len(fft_spectra) >= 2:
+                    l2_values = []
                     time_steps = np.array(fin_times)
 
-                    scatter = ax_traj.scatter(
-                        x_coords[1:], y_coords[1:],
-                        c=time_steps[1:],
-                        cmap='plasma',
-                        marker='o',
-                        edgecolor='k',
-                        s=40,
-                        alpha=0.7
-                    )
-                    ax_traj.scatter(
-                        x_coords[0], y_coords[0],
-                        c='black',
-                        marker='o',
-                        edgecolor='k',
-                        s=50,
-                        alpha=0.9,
-                        label='Start'
-                    )
-                    ax_traj.plot(x_coords, y_coords, linestyle='-', color='gray', alpha=0.5)
-                    ax_traj.set_title("Trajectory", fontsize=8)
-                    ax_traj.set_xlabel("X", fontsize=6)
-                    ax_traj.set_ylabel("Y", fontsize=6)
-                    ax_traj.tick_params(axis='both', which='major', labelsize=6)
+                    for j in range(len(fft_spectra) - 1):
+                        xf_i, yf_i = fft_spectra[j]
+                        xf_j, yf_j = fft_spectra[j + 1]
+                        norm = l2_fourier(xf_i, yf_i, xf_j, yf_j)
+                        l2_values.append(norm)
 
-                    cbar = fig.colorbar(scatter, ax=ax_traj, orientation='vertical', fraction=0.046, pad=0.04)
-                    cbar.set_label("Time", rotation=270, labelpad=8, fontsize=6)
-                    cbar.ax.tick_params(labelsize=6)
+                    l2_values = np.array(l2_values)
+                    time_midpoints = (time_steps[:-1] + time_steps[1:]) / 2
+
+                    ax_l2plot.plot(time_midpoints, l2_values, '-o', color='blue', markersize=3)
+                    ax_l2plot.set_title("L2 vs Time", fontsize=8)
+                    ax_l2plot.set_xlabel("Time", fontsize=6)
+                    ax_l2plot.set_ylabel("L2 Distance", fontsize=6)
+                    ax_l2plot.tick_params(axis='both', which='major', labelsize=6)
                 else:
-                    ax_traj.axis('off')
+                    ax_l2plot.axis('off')
 
             plt.tight_layout()
             pdf.savefig(fig)
             plt.close(fig)
 
+def summarize_statistics_from_h5(h5_path):
+    protrusions = []
+    intrusions = []
+    fft_peaks = []
+
+    with h5py.File(h5_path, 'r') as h5file:
+        for cell_key in h5file.keys():
+            cell_group = h5file[cell_key]
+            for frame_key in cell_group.keys():
+                frame_group = cell_group[frame_key]
+                if 'protrusions' in frame_group and 'intrusions' in frame_group and 'fft_main_peak' in frame_group:
+                    p = frame_group['protrusions'][()]
+                    i = frame_group['intrusions'][()]
+                    f = frame_group['fft_main_peak'][()]
+                    if f != -1:
+                        protrusions.append(p)
+                        intrusions.append(i)
+                        fft_peaks.append(f)
+
+    def mean_std(arr):
+        return np.mean(arr), np.std(arr)
+
+    prot_mu, prot_std = mean_std(protrusions)
+    intr_mu, intr_std = mean_std(intrusions)
+    peak_mu, peak_std = mean_std(fft_peaks)
+
+    t_stat_prot, p_val_prot = stats.ttest_ind(fft_peaks, protrusions)
+    t_stat_intr, p_val_intr = stats.ttest_ind(fft_peaks, intrusions)
+
+
+
+    print("Summary statistics across all frames:")
+    print(f"Protrusions: {prot_mu:.2f} ± {prot_std:.2f}")
+    print(f"Intrusions: {intr_mu:.2f} ± {intr_std:.2f}")
+    print(f"FFT main frequency: {peak_mu:.2f} ± {peak_std:.2f}")
+    
+    print(f"T-statistic for Protrusions: {t_stat_prot}, p-value: {p_val_prot}")
+    print(f"T-statistic for Intrusions: {t_stat_intr}, p-value: {p_val_intr}")
+
+    # return {
+    #     'protrusions': (prot_mu, prot_std),
+    #     'intrusions': (intr_mu, intr_std),
+    #     'fft_main_peak': (peak_mu, peak_std),
+    #     'p_value_prot_vs_intr': p_value
+    # }
+
+def fft_spare_l2_matrix_optimal_fourier(direct, migration_types_to_keep=["Free Diffusion", "Confined Diffusion","Immobile", "Directed Diffusion", "Unclassified"]):
+
+    label_map = {
+        1: "Immobile",
+        2: "Confined Diffusion",
+        3: "Free Diffusion",
+        4: "Directed Diffusion",
+        "unclassified": "Unclassified"
+    }
+
+    all_cell_folders = [
+        os.path.join(direct, ff)
+        for ff in sorted(os.listdir(direct), key=lambda x: int(x.split('_')[1]) if '_' in x and x.split('_')[1].isdigit() else 0)
+    ]
+
+    fft_spectra = []
+    migration_type = []
+    theta_3_array = []
+    topo_array = []
+    included_indices = []
+
+    time_events_path = "time_events_95.h5"
+    with h5py.File(time_events_path, 'r') as h5_file:
+        idx_counter = 0
+        for cell_number in range(len(all_cell_folders)):
+            cell_path = all_cell_folders[cell_number]
+            all_outlines, _, all_topo, _, _, _, fin_times = conformal_representation(cell_path)
+            num = len(all_outlines)
+
+            group = f"/track_{cell_number + 1}"
+            if group not in h5_file:
+                print(f"Skipping {group} (no data)")
+                continue
+
+            motion_data = h5_file[group][:]
+            event_indices = motion_data[0, :].astype(int) - 1
+            interval_types = motion_data[2, :]
+
+            for jj in range(num):
+                motion_type = "unclassified"
+                for k in range(len(interval_types)):
+                    raw_type = interval_types[k]
+                    if k < len(event_indices) - 1:
+                        start = event_indices[k] if k == 0 else event_indices[k] + 1
+                        end = event_indices[k + 1]
+                    else:
+                        start = event_indices[k] if k == 0 else event_indices[k] + 1
+                        end = num - 1
+                    if start <= jj <= end:
+                        motion_type = int(raw_type) + 1 if not np.isnan(raw_type) else "unclassified"
+                        break
+
+                label = label_map[motion_type]
+                if label not in migration_types_to_keep:
+                    idx_counter += 1
+                    continue
+
+                topography_coords_disk = smooth_topo(all_topo[jj])
+                index_from = op_index(all_outlines[jj - 1], all_outlines[jj], 0) if jj > 0 else 0
+                theta_zero_index = np.arctan2(topography_coords_disk[index_from][0], topography_coords_disk[index_from][1])
+                theta_topo = np.arctan2(topography_coords_disk[:, 0], topography_coords_disk[:, 1])
+                theta_3 = np.degrees((theta_topo - theta_zero_index) % (2 * np.pi))
+
+                topo_height = np.sqrt((topography_coords_disk[:, 0])**2 + (topography_coords_disk[:, 1])**2) - 50
+                theta_3, topo_height = zip(*sorted(zip(theta_3, topo_height)))
+                topo_height = np.array(topo_height)
+
+                theta_3_array.append(theta_3)
+                topo_array.append(topo_height)
+                migration_type.append(label)
+                included_indices.append(idx_counter)
+                idx_counter += 1
+
+    total = len(theta_3_array)
+    # Создание всех пар (i, j) с i <= j
+    # pairs = [(i, j) for i in range(total) for j in range(i, total)]
+
+    # with Pool(processes=cpu_count()) as pool:
+    #     results = pool.starmap(
+    #         partial(compute_l2_entry, theta_3_array=theta_3_array, topo_array=topo_array),
+    #         pairs
+    #     )
+
+    # Матрицы расстояний и фаз
+    l2_matrix = np.zeros((total, total))
+    angle_matrix = np.load('/home/pavel/Downloads/optimal_angle_matrix.npy')
+
+    for i in range(total):
+        topo_i = topo_array[i]
+        xfi, yfi = fft_transformation(theta_3_array[i], topo_i, 30)
+        for j in range(i, total):
+            topo_j =  topo_array[j]
+            
+            shifted_topo = np.roll(topo_j, angle_matrix[i][j])
+            xfj, yfj = fft_transformation(theta_3_array[j], shifted_topo, 30)
+
+            value = l2_fourier(xfi, yfi, xfj, yfj)
+
+            l2_matrix[i, j] = value
+            l2_matrix[j, i] = value
+            print(1)    
+    np.save("l2_matrix_optimal_fourier.npy", l2_matrix)
+    # np.save("/scratch/st-am823-1/Pavel/optimal_angle_matrix.npy", angle_matrix)
+
+    unique_types = sorted(set(migration_type))
+    type_to_index = {label: idx for idx, label in enumerate(unique_types)}
+    index_labels = [type_to_index[label] for label in migration_type]
+
+    reducer = umap.UMAP(metric="precomputed", random_state=42)
+    embedding = reducer.fit_transform(l2_matrix)
+
+    plt.figure(figsize=(10, 8))
+    colors = plt.cm.tab10(index_labels)
+    sc = plt.scatter(
+        embedding[:, 0],
+        embedding[:, 1],
+        c=colors,
+        s=10
+    )
+    plt.title("UMAP Projection Colored by Migration Type", fontsize=16)
+    plt.gca().set_aspect('equal', 'datalim')
+
+    legend_handles = [
+        mpatches.Patch(color=plt.cm.tab10(type_to_index[label]), label=label)
+        for label in unique_types
+    ]
+    plt.legend(handles=legend_handles, title="Migration Type", bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.savefig(f"fourier_matrix_filtered_umap_new.png")
+
+def classify_protrusions_intrusions(outline, topo, curvatures, shift,
+                                    image_size=100,
+                                    critical_curvature=0.0454,
+                                    critical_height_protrusion=6.2338,
+                                    critical_height_intrusion=5.1208):
+    import numpy as np
+    from scipy.ndimage import gaussian_filter, distance_transform_edt
+    from skimage.feature import peak_local_max
+    from skimage.segmentation import watershed
+    from skimage.draw import polygon, disk
+    from scipy import ndimage as ndi
+
+    topo = np.copy(topo)
+    outline = np.copy(outline)
+
+    for i in range(2):
+        min_val = np.min(outline[:, i])
+        max_val = np.max(outline[:, i])
+        margin = 5
+        scale = image_size - 2 * margin
+        outline[:, i] = (outline[:, i] - min_val) / (max_val - min_val) * scale + margin
+        shift[i] = shift[i] / (max_val - min_val) * scale
+
+    topo[:, 0] = (topo[:, 0] + image_size) / 2
+    topo[:, 1] = (topo[:, 1] + image_size) / 2
+
+    center = np.array([image_size / 2, image_size / 2])
+    index_from = 0
+    theta = np.arctan2(topo[index_from][0], topo[index_from][1])
+    R = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+    topo = (topo - center) @ R.T + center
+
+    rr, cc = polygon(topo[:, 1], topo[:, 0], shape=(image_size, image_size))
+    binary_image = np.zeros((image_size, image_size), dtype=np.uint8)
+    binary_image[rr, cc] = 1
+
+    circle_center = (image_size / 2, image_size / 2)
+    circle_radius = 25
+    rr1, cc1 = disk(circle_center, circle_radius, shape=(image_size, image_size))
+    circle_mask = np.zeros_like(binary_image)
+    circle_mask[rr1, cc1] = 1
+
+    protrusions = np.logical_and(binary_image, np.logical_not(circle_mask))
+    intrusions = np.logical_and(np.logical_not(binary_image), circle_mask)
+
+    distance_map_protrusions = gaussian_filter(distance_transform_edt(protrusions), sigma=1.0)
+    distance_map_intrusions = gaussian_filter(distance_transform_edt(intrusions), sigma=1.0)
+
+    local_maxi_protrusions = peak_local_max(distance_map_protrusions, footprint=np.ones((3, 3)), labels=protrusions, min_distance=10)
+    local_maxi_intrusions = peak_local_max(distance_map_intrusions, footprint=np.ones((3, 3)), labels=intrusions, min_distance=10)
+
+    mask_prot = np.zeros(distance_map_protrusions.shape, dtype=bool)
+    mask_intr = np.zeros(distance_map_intrusions.shape, dtype=bool)
+    mask_prot[tuple(local_maxi_protrusions.T)] = True
+    mask_intr[tuple(local_maxi_intrusions.T)] = True
+
+    markers_prot, _ = ndi.label(mask_prot)
+    markers_intr, _ = ndi.label(mask_intr)
+
+    labels_prot = watershed(-distance_map_protrusions, markers_prot, mask=protrusions)
+    labels_intr = watershed(-distance_map_intrusions, markers_intr, mask=intrusions)
+
+    topo = np.clip(topo, 0, image_size - 1)
+    color_by_index = {}
+
+    for idx, coord in enumerate(topo):
+        x, y = np.round(coord).astype(int)
+        if 0 <= y < image_size and 0 <= x < image_size:
+            if labels_prot[y, x] > 0:
+                color_by_index[idx] = (1.0, 0.0, 0.0)
+            elif labels_intr[y, x] > 0:
+                color_by_index[idx] = (0.0, 1.0, 0.0)
+            else:
+                color_by_index[idx] = (1.0, 1.0, 1.0)
+
+    # Fill between protrusions/intrusions
+    stride = 10
+    changed = True
+    length = len(color_by_index)
+    while changed:
+        changed = False
+        color_copy = color_by_index.copy()
+        for i in range(length):
+            if color_copy[i] == (1.0, 1.0, 1.0):
+                prev_idx = (i - 1) % length
+                prev_color = color_copy[prev_idx]
+                for offset in range(1, stride + 1):
+                    forward_idx = (i + offset) % length
+                    forward_color = color_copy[forward_idx]
+                    if forward_color != (1.0, 1.0, 1.0):
+                        if forward_color == prev_color:
+                            for z in range(offset):
+                                idx_to_paint = (i + z) % length
+                                if color_by_index[idx_to_paint] == (1.0, 1.0, 1.0):
+                                    color_by_index[idx_to_paint] = prev_color
+                                    changed = True
+                        break
+
+    # Remove short segments
+    stride = 5
+    color_copy = color_by_index.copy()
+    i = 0
+    while i < length:
+        current_color = color_copy[i]
+        if current_color in [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]:
+            segment_length = 0
+            while segment_length < length:
+                idx = (i + segment_length) % length
+                if color_copy[idx] == current_color:
+                    segment_length += 1
+                else:
+                    break
+            if segment_length < stride:
+                for j in range(segment_length):
+                    idx_to_white = (i + j) % length
+                    color_copy[idx_to_white] = (1.0, 1.0, 1.0)
+            i += segment_length
+        else:
+            i += 1
+    color_by_index = color_copy
+
+    # Final condition: check curvature & radial thresholds
+    criteria_index = {}
+    for idx, coord in enumerate(topo):
+        x, y = coord
+        r = (np.sqrt((x - center[0])**2 + (y - center[1])**2) - circle_radius) * 2
+        curvature = curvatures[idx]
+        if r >= critical_height_protrusion and np.abs(curvature) > np.abs(critical_curvature):
+            characteristic = "P"
+        elif r <= -critical_height_intrusion and np.abs(curvature) > np.abs(critical_curvature):
+            characteristic = "I"
+        else:
+            characteristic = "N"
+        criteria_index[idx] = characteristic
+
+    i = 0
+    color_copy = color_by_index.copy()
+    while i < length:
+        current_color = color_copy[i]
+        if current_color in [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]:
+            segment_indices = []
+            has_valid_criteria = False
+            while True:
+                idx = (i + len(segment_indices)) % length
+                if color_copy[idx] == current_color:
+                    segment_indices.append(idx)
+                    if criteria_index.get(idx) in ("P", "I"):
+                        has_valid_criteria = True
+                else:
+                    break
+            if not has_valid_criteria:
+                for idx in segment_indices:
+                    color_copy[idx] = (1.0, 1.0, 1.0)
+            i += len(segment_indices)
+        else:
+            i += 1
+
+    return color_copy
+def plot_all_protrusions_intrusions_grid_to_pdf(
+    direct,
+    time_events_path,
+    output_pdf="prot_intr_timegrid_by_migration.pdf",
+    rows=4,
+    cols=3
+):
+    import os
+    import numpy as np
+    import h5py
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+    from matplotlib.lines import Line2D
+
+    # цветовая схема по режимам
+    strict_color_map = {
+        "Immobile": "#b10000",
+        "Confined Diffusion": "#6600cc",
+        "Free Diffusion": "#00e5ff",
+        "Directed Diffusion": "#ff00ff",
+        "Unclassified": "#000000",
+    }
+
+    def motion_labels_per_frame(event_times, interval_types, n_frames, time_data):
+        labels = ["Unclassified"] * n_frames
+        if n_frames == 0 or len(interval_types) == 0 or len(event_times) == 0:
+            return labels
+        time_data = np.asarray(time_data, dtype=float)
+        if time_data.size != n_frames:
+            n_frames = min(n_frames, time_data.size)
+            time_data = time_data[:n_frames]
+            labels = labels[:n_frames]
+        event_times = np.asarray(event_times, dtype=float)
+        if event_times[-1] < time_data[-1]:
+            event_times = np.append(event_times, time_data[-1])
+        label_map_local = {
+            0: "Immobile",
+            1: "Confined Diffusion",
+            2: "Free Diffusion",
+            3: "Directed Diffusion",
+            "unclassified": "Unclassified",
+        }
+        for j in range(len(interval_types)):
+            start_t = event_times[j]
+            end_t   = event_times[j + 1] if j + 1 < len(event_times) else time_data[-1]
+            key = int(interval_types[j]) if not np.isnan(interval_types[j]) else "unclassified"
+            lab = label_map_local.get(key, "Unclassified")
+            mask = (time_data >= start_t) & (time_data <= end_t)
+            if not np.any(mask):
+                continue
+            frame_idx = np.where(mask)[0]
+            for k in frame_idx:
+                labels[int(k)] = lab
+        return labels
+
+    plots_per_page = rows * cols
+
+    all_cell_folders = [
+        os.path.join(direct, ff)
+        for ff in sorted(os.listdir(direct), key=lambda x: int(x.split('_')[1]) if '_' in x and x.split('_')[1].isdigit() else 0)
+    ]
+
+    with h5py.File(time_events_path, "r") as h5_file, PdfPages(output_pdf) as pdf:
+        for page_start in range(0, len(all_cell_folders), plots_per_page):
+            fig, axes = plt.subplots(rows, cols, figsize=(11.69, 8.27))  # A4 landscape
+            axes = axes.flatten()
+
+            for i in range(plots_per_page):
+                plot_index = page_start + i
+                ax = axes[i]
+
+                if plot_index >= len(all_cell_folders):
+                    ax.axis("off")
+                    continue
+
+                cell_path = all_cell_folders[plot_index]
+                cell_number = plot_index + 1
+
+                group = f"/track_{cell_number}"
+                if group not in h5_file:
+                    ax.set_title(f"Cell {cell_number} (missing)", fontsize=8)
+                    ax.axis("off")
+                    continue
+
+                # Данные клетки
+                try:
+                    all_outlines, _, all_topo, all_curvatures, disk_coors, centr, fin_times = conformal_representation(cell_path)
+                    shifts = get_shift(all_outlines, centr, fin_times)
+                except Exception:
+                    ax.set_title(f"Cell {cell_number} (error)", fontsize=8)
+                    ax.axis("off")
+                    continue
+
+                # События и режимы
+                motion_data = h5_file[group][:]
+                event_indices = motion_data[0, :].astype(int) - 1
+                interval_types = motion_data[2, :]
+                n_frames = len(all_outlines)
+
+                frame_labels = motion_labels_per_frame(event_indices, interval_types, n_frames, fin_times)
+                protrusion_counts, intrusion_counts, times = [], [], []
+                speed_series = []  # NEW: скорость в тех же кадрах, где считаем протрузии/интрузии
+
+                for jj in range(n_frames):
+                    outline = all_outlines[jj]
+                    topo = smooth_topo(all_topo[jj])
+                    curvatures = all_curvatures[jj]
+                    shift = shifts[jj]
+                    t = fin_times[jj]
+
+                    try:
+                        color_by_index = classify_protrusions_intrusions(outline, topo, curvatures, shift)
+                    except Exception:
+                        continue
+
+                    colors_ring = [color_by_index[k] for k in range(len(color_by_index))]
+                    num_prot = sum(
+                        1 for k in range(len(colors_ring))
+                        if colors_ring[k] == (1.0, 0.0, 0.0) and colors_ring[(k - 1) % len(colors_ring)] != colors_ring[k]
+                    )
+                    num_intr = sum(
+                        1 for k in range(len(colors_ring))
+                        if colors_ring[k] == (0.0, 1.0, 0.0) and colors_ring[(k - 1) % len(colors_ring)] != colors_ring[k]
+                    )
+                    protrusion_counts.append(num_prot)
+                    intrusion_counts.append(num_intr)
+                    times.append(t)
+                    # NEW: скорость для этого же кадра
+                    speed_series.append(float(np.linalg.norm(shift)))
+
+                if not times:
+                    ax.set_title(f"Cell {cell_number} (no data)", fontsize=8)
+                    ax.axis("off")
+                    continue
+
+                times = np.array(times, dtype=float)
+                prot  = np.array(protrusion_counts, dtype=float)
+                intr  = np.array(intrusion_counts, dtype=float)
+                speed_series = np.array(speed_series, dtype=float)
+
+                # замкнуть последним временем при необходимости
+                if event_indices[-1] < times[-1]:
+                    event_indices = np.append(event_indices, times[-1])
+
+                interval_colors = {
+                    0: "brown",
+                    1: "blue",
+                    2: "cyan",
+                    3: "magenta",
+                    "unclassified": "black",
+                }
+
+                classifier = []
+                for j in range(len(interval_types)):
+                    start_time = event_indices[j]
+                    end_time   = event_indices[j + 1] if j + 1 < len(event_indices) else times[-1]
+                    interval_type = interval_types[j]
+                    classifier.append((start_time, end_time, interval_type))
+
+                for start_time, end_time, interval_type in classifier:
+                    interval_type = int(interval_type) if not np.isnan(interval_type) else "unclassified"
+                    color = interval_colors.get(interval_type, "black")
+                    mask = (times >= start_time) & (times <= end_time)
+                    if not np.any(mask):
+                        continue
+                    ax.plot(times[mask], prot[mask], linestyle="-",  color=color, linewidth=1.0)
+                    ax.plot(times[mask], intr[mask], linestyle="--", color=color, linewidth=1.0)
+
+                # |v| по всем кадрам (отдельная правая ось)
+                speed_full = np.linalg.norm(shifts, axis=1)
+
+                ax_right = ax.twinx()
+                ax_right.plot(times, speed_series, linestyle="-", linewidth=0.9, color="#666666", alpha=0.9)
+                ax_right.set_ylabel("|v|", fontsize=6)
+                ax_right.tick_params(axis="y", which="major", labelsize=6)
+
+                # NEW: корреляции
+                def _pearson_at_lag(x, y, lag):
+                    x = np.asarray(x, dtype=float)
+                    y = np.asarray(y, dtype=float)
+                    if lag > 0:
+                        x1, y1 = x[:-lag], y[lag:]
+                    elif lag < 0:
+                        x1, y1 = x[-lag:], y[:lag]
+                    else:
+                        x1, y1 = x, y
+                    m = np.isfinite(x1) & np.isfinite(y1)
+                    if m.sum() >= 2 and np.std(x1[m]) > 0 and np.std(y1[m]) > 0:
+                        return float(np.corrcoef(x1[m], y1[m])[0, 1])
+                    return np.nan
+
+                def _best_lag_corr(x, y, max_lag=10):
+                    # ищем лаги в диапазоне [-max_lag, max_lag]
+                    best = (np.nan, 0)
+                    for L in range(-max_lag, max_lag + 1):
+                        r = _pearson_at_lag(x, y, L)
+                        if not np.isnan(r):
+                            if np.isnan(best[0]) or abs(r) > abs(best[0]):
+                                best = (r, L)
+                    return best  # (r_max, lag*)
+                def _safe_corr(a, b):
+                    a = np.asarray(a, dtype=float)
+                    b = np.asarray(b, dtype=float)
+                    m = np.isfinite(a) & np.isfinite(b)
+                    if m.sum() >= 2 and np.std(a[m]) > 0 and np.std(b[m]) > 0:
+                        return float(np.corrcoef(a[m], b[m])[0, 1])
+                    return np.nan
+
+                rho_pi = _safe_corr(prot, intr)
+                rho_pv = _safe_corr(prot, speed_series)
+                dt = float(np.median(np.diff(times))) if len(times) >= 2 else np.nan
+
+                # подбери окно лагов в кадрах (например, +/-10 кадров)
+                r_pv_lag, lag_pv = _best_lag_corr(prot, speed_series, max_lag=10)
+                r_pi_lag, lag_pi = _best_lag_corr(prot, intr,          max_lag=10)
+
+                def _lag_text(r, lag):
+                    if np.isnan(r): 
+                        return "n/a"
+                    if np.isnan(dt):
+                        return f"{r:.2f}@lag={lag}"
+                    return f"{r:.2f}@τ={lag}fr≈{lag*dt:.2f}t"
+
+                corr_text = (
+                    f"ρ(P,I)={rho_pi:.2f}  ρ(P,|v|)={rho_pv:.2f}  "
+                    f"max ρ(P,I)={_lag_text(r_pi_lag, lag_pi)}  "
+                    f"max ρ(P,|v|)={_lag_text(r_pv_lag, lag_pv)}"
+                )
+
+                corr_text = f"ρ(P,I)={rho_pi:.2f}  ρ(P,|v|)={rho_pv:.2f}" if np.isfinite([rho_pi, rho_pv]).all() \
+                            else f"ρ(P,I)={rho_pi if np.isfinite(rho_pi) else 'n/a'}  ρ(P,|v|)={rho_pv if np.isfinite(rho_pv) else 'n/a'}"
+
+                # Заголовок/подписи
+                ax.set_title(f"Cell {cell_number}", fontsize=9)
+                # NEW: добавить во 2-ю строку подписи оси X
+                ax.set_xlabel(f"Time\n{corr_text}", fontsize=6, labelpad=2)
+                ax.set_ylabel("Count", fontsize=6)
+                ax.tick_params(axis="both", which="major", labelsize=6)
+                ax.grid(True, alpha=0.2)
+
+                # NEW: продублировать маленьким текстом в правом верхнем углу
+                ax.text(0.98, 0.98, corr_text, transform=ax.transAxes,
+                        ha="right", va="top", fontsize=6, alpha=0.9)
+
+            # Общая легенда для стилей линий
+            style_handles = [
+                Line2D([0], [0], color="#000000", linestyle="-", label="Protrusions"),
+                Line2D([0], [0], color="#000000", linestyle="--", label="Intrusions"),
+            ]
+            # Общая легенда для цветов (режимов)
+            color_handles = [
+                Line2D([0], [0], color=c, linestyle="-", linewidth=2, label=lab)
+                for lab, c in strict_color_map.items()
+            ]
+
+            fig.legend(handles=color_handles, loc="upper center", bbox_to_anchor=(0.3, 1.02),
+                       ncol=3, fontsize=7, frameon=False, title="Migration Type")
+            fig.legend(handles=style_handles, loc="upper center", bbox_to_anchor=(0.82, 1.02),
+                       ncol=1, fontsize=7, frameon=False, title="Line Style")
+
+            plt.tight_layout(rect=[0, 0, 1, 0.96])
+            pdf.savefig(fig)
+            plt.close(fig)
+
+    print(f"✅ Saved PDF with per-cell time-series colored by migration type (styles distinguish Prot/Intr): {output_pdf}")
+
+
+def speed_vs_protrusions_boxplot(direct, time_events_path, max_protrusions=6):
+    import os
+    import numpy as np
+    import h5py
+    import matplotlib.pyplot as plt
+    from collections import defaultdict
+
+    # подготовим корзины: {число протрузий: список скоростей}
+    stats = defaultdict(list)
+
+    all_cell_folders = [
+        os.path.join(direct, ff)
+        for ff in sorted(
+            os.listdir(direct),
+            key=lambda x: int(x.split('_')[1]) if '_' in x and x.split('_')[1].isdigit() else 0
+        )
+    ]
+
+    with h5py.File(time_events_path, "r") as h5_file:
+        for plot_index, cell_path in enumerate(all_cell_folders):
+            cell_number = plot_index + 1
+            group = f"/track_{cell_number}"
+            if group not in h5_file:
+                continue
+
+            try:
+                all_outlines, _, all_topo, all_curvatures, disk_coors, centr, fin_times = conformal_representation(cell_path)
+                shifts = get_shift(all_outlines, centr, fin_times)
+            except Exception:
+                continue
+
+            n_frames = len(all_outlines)
+            if n_frames == 0:
+                continue
+
+            speed = np.linalg.norm(shifts, axis=1)
+
+            for jj in range(n_frames):
+                outline = all_outlines[jj]
+                topo = smooth_topo(all_topo[jj])
+                curvatures = all_curvatures[jj]
+                shift = shifts[jj]
+
+                try:
+                    color_by_index = classify_protrusions_intrusions(outline, topo, curvatures, shift)
+                except Exception:
+                    continue
+
+                colors_ring = [color_by_index[k] for k in range(len(color_by_index))]
+                num_prot = sum(
+                    1 for k in range(len(colors_ring))
+                    if colors_ring[k] == (1.0, 0.0, 0.0) and colors_ring[(k - 1) % len(colors_ring)] != colors_ring[k]
+                )
+
+                group_key = num_prot if num_prot <= max_protrusions else max_protrusions
+                stats[group_key].append(abs(speed[jj]))
+
+    # подготовим данные для boxplot
+    data = [stats.get(k, []) for k in range(max_protrusions + 1)]
+    labels = [str(k) if k < max_protrusions else f"{max_protrusions}+" for k in range(max_protrusions + 1)]
+
+    # построение boxplot
+    plt.figure(figsize=(8, 6))
+    plt.boxplot(data, labels=labels, patch_artist=True,
+                boxprops=dict(facecolor="lightgray", color="black"),
+                medianprops=dict(color="red", linewidth=2),
+                whiskerprops=dict(color="black"),
+                capprops=dict(color="black"),
+                flierprops=dict(marker="o", color="black", alpha=0.5))
+
+    plt.xlabel("Number of protrusions")
+    plt.ylabel("Speed |v|")
+    plt.title("Distribution of cell speed by number of protrusions")
+    plt.tight_layout()
+    plt.savefig("speed_vs_protrusions_boxplot.png", dpi=200)
+    plt.show()
+
+    return stats
+
+
+
+def spikeness_motion_type(direct, time_events_path):
+                                            #       initial_critical_height_protrusion=6.2338,#6.1495,
+                                            #   initial_critical_height_intrusion=5.1208,#5.0797,
+                                            #   critical_curvature=0.0451,#0.0454,
+    image_size = 100
+    critical_threshold = 0
+
+    all_cell_folders = [
+        os.path.join(direct, ff)
+        for ff in sorted(os.listdir(direct), key=lambda x: int(x.split('_')[1]) if '_' in x and x.split('_')[1].isdigit() else 0)
+    ]
+
+    stats_by_type = defaultdict(list)
+
+    with h5py.File(time_events_path, 'r') as h5_file:
+        for cell_number, cell_path in enumerate(all_cell_folders):
+
+            all_outlines, _, all_topo, all_curvatures, disk_coors, centr, fin_times = conformal_representation(cell_path)
+            
+            disk_center = np.mean(disk_coors, axis=0)
+            disk_radius = np.mean(np.linalg.norm(disk_coors - disk_center, axis=1))
+            
+            group = f"/track_{cell_number + 1}"
+            if group not in h5_file:
+                print(f"Missing track: {group}")
+                continue
+
+            motion_data = h5_file[group][:]
+            event_indices = motion_data[0, :].astype(int) - 1
+            interval_types = motion_data[2, :] 
+            last_time =  motion_data[1, -1].astype(int) - 1
+            event_indices = np.append(event_indices,last_time)
+
+            for jj in range(len(all_outlines)):
+                motion_type = "unclassified"
+                for k in range(len(interval_types)):
+                    raw_type = interval_types[k]
+                    if k < len(event_indices) - 1:
+                        start = event_indices[k] if k == 0 else event_indices[k] + 1
+                        end = event_indices[k + 1]
+                    else:
+                        start = event_indices[k] if k == 0 else event_indices[k] + 1
+                        end = len(all_outlines) - 1
+                    if start <= jj <= end:
+                        motion_type = int(raw_type) + 1 if not np.isnan(raw_type) else "unclassified"
+                        break
+                topo = smooth_topo(all_topo[jj])   
+
+
+                # радиальная высота относительно среднего диска
+                rel = topo - disk_center
+                r = np.linalg.norm(rel, axis=1)
+                topo_height = r - disk_radius      # (N,)
+
+                # --- spikeness с двумя трешхолдами ---
+                # нормируем на радиус, чтобы быть инвариантными к размеру клетки
+                u = np.abs(topo_height) / (disk_radius + 1e-8)
+
+                # два порога (в относительных единицах радиуса)
+                eps = 0.0001    # "почти ноль" ~ 1% радиуса
+                T_far = 2  # "далеко от нуля" ~ 5% радиуса
+
+                w = np.zeros_like(u)
+
+                # средняя зона: линейный рост веса
+                mid_mask = (u > eps) & (u < T_far)
+                w[mid_mask] = (u[mid_mask] - eps) / (T_far - eps)
+
+                # дальняя зона: вес = 1
+                far_mask = (u >= T_far)
+                w[far_mask] = 1.0
+
+                spikeness = float(np.mean(w))
+
+                stats_by_type[motion_type].append(spikeness)
+
+              
+
+    # # Вывод статистики и расчет стандартного отклонения
+    label_map = {
+        1: "Immobile",
+        2: "Confined Diffusion",
+        3: "Free Diffusion",
+        4: "Directed Diffusion",
+        "unclassified": "Unclassified"
+    }
+
+    print("\n📊 Average spikeness per frame by motion type:\n")
+    keys = [1, 2, 3, 4, "unclassified"]
+    motion_types = []
+
+    spikeness_vals = []
+    std_spikeness_vals = []
+
+    for key in keys:
+        values = np.array(stats_by_type.get(key, []))
+        if len(values) > 0:
+            mean_spikeness = np.mean(values[:])
+            std_spikeness = np.std(values[:])  # Среднеквадратичное отклонение для протрузий
+        else:
+            mean_spikeness = 0
+            std_spikeness=0
+
+        
+        label = label_map.get(key, str(key))
+        print(f"{label}:")
+        print(f"  Avg. Spikeness: {mean_spikeness:.2f} ± {std_spikeness:.2f}")
+
+
+        # Подготовка данных для графика
+        motion_types.append(label)
+        spikeness_vals.append(mean_spikeness)
+        std_spikeness_vals.append(std_spikeness)
+
+    # Построение графика с точками и вертикальными отрезками
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x = np.arange(len(motion_types))
+
+    # Центральные точки для среднего значения
+    ax.scatter(x, spikeness_vals, color='cyan', label='Mean Spikeness', zorder=5)
+    spikeness_vals = np.array(spikeness_vals)
+    std_spikeness_vals = np.array(std_spikeness_vals)
+
+    ax.vlines(x, spikeness_vals - std_spikeness_vals, spikeness_vals + std_spikeness_vals, color='cyan', linewidth=2)
+    
+    ax.set_xticks(x)
+    ax.set_xticklabels(motion_types)
+    ax.set_xlabel('Motion Type')
+    ax.set_ylabel('Spikeness')
+    ax.set_title('Spikeness')
+
+    ax.legend()
+    plt.show()
+    
+     
+    # from scipy import stats
+
+    # # Сбор данных для "Free Diffusion" и "Directed Diffusion"
+    # free_diffusion_protrusions = []
+    # directed_diffusion_protrusions = []
+    # free_diffusion_intrusions = []
+    # directed_diffusion_intrusions = []
+
+    # # Пройдем по всем ключам и соберем значения для t-теста
+    # for key in [3, 4]:  # 3 - Free Diffusion, 4 - Directed Diffusion
+    #     values = np.array(stats_by_type.get(key, []))
+    #     if len(values) > 0:
+    #         if key == 3:  # Free Diffusion
+    #             free_diffusion_protrusions.extend(values[:, 0])
+    #             free_diffusion_intrusions.extend(values[:, 1])
+    #         elif key == 4:  # Directed Diffusion
+    #             directed_diffusion_protrusions.extend(values[:, 0])
+    #             directed_diffusion_intrusions.extend(values[:, 1])
+
+    # # Применение t-теста
+    # t_stat_prot, p_val_prot = stats.ttest_ind(free_diffusion_protrusions, directed_diffusion_protrusions)
+    # t_stat_intr, p_val_intr = stats.ttest_ind(free_diffusion_intrusions, directed_diffusion_intrusions)
+
+    # # Вывод результатов t-теста
+    # print("\n📊 T-test results between Free Diffusion and Directed Diffusion:")
+    # print(f"T-statistic for Protrusions: {t_stat_prot}, p-value: {p_val_prot}")
+    # print(f"T-statistic for Intrusions: {t_stat_intr}, p-value: {p_val_intr}")
+    
+    
+    # plt.tight_layout()
+    # plt.show()
 
 
 if __name__ == '__main__':
     glob_folder = '/home/pavel/cell_morphology/cells/'
     sergio_folder = "/home/pavel/Downloads/Code/kp0.2/cells"
+    glob_filtered_folder = '/home/pavel/cell_morphology/filtered_data/cells_filtered/'
     protrusion_height = 0.0
     protrusion_width = 1
     eps = 10
+
+
+    #fft_spare_l2_matrix_whole_dataset(glob_folder)
     #plot_3d_cell_outlines(glob_folder, 87)
     #glob_folder = '/home/pavel/Downloads/cells_v2_filtered/cells'
     #max_protusion_plot(glob_folder)
     #create_outline_video(glob_folder)
+    #stats_max_protusions(glob_filtered_folder)
     #stats_max_protusions_2(glob_folder)
     #stats_max_protusions_360(glob_folder)
     #stats_single_cell_360(glob_folder, 87,[60,])
@@ -3236,21 +5031,49 @@ if __name__ == '__main__':
     #circle_watershed_border(glob_folder, 41, 5)
     #stats_single_cell_protusions_wrt_vel(glob_folder, 86, [1, ])
     #stats_single_cell_protusions_wrt_vel(glob_folder, 87, [1,100])
-
+    #stats_max_intrusions(glob_folder)
     #plot_shape_and_topo_3D(glob_folder, 86)
         #77, 24, 20, 193, 194, 195, 201, 
-    #for i in [77, 24, 20, 193, 194, 195, 201, 202,203, 86]:
+    # for i in [77, 24, 20, 193, 194, 195, 201, 202,203, 86]:
     #    save_circle_watershed_evolution_to_pdf(glob_folder, i, f"cell_{i+1}_pdf_new.pdf")
+    #save_circle_watershed_evolution_to_pdf(glob_filtered_folder, 43, f"cell_{43+1}_pdf_new.pdf")
     #save_circle_watershed_evolution_to_pdf_steps(glob_folder, 203, f"cell_{203+1}_pdf_steps.pdf")
-    save_circle_watershed_evolution_to_pdf(glob_folder, 203, f"cell_{203+1}_pdf.pdf")
-    #collect_statistics(glob_folder)
-    #generate_umap_pdf_for_all_cells(glob_folder, "time_events_95.h5", "umap_all_cells.pdf")
-    #fft_spare_l2_matrix(glob_folder,86)
-    #collect_protrusion_intrusion_stats_by_motion_type(glob_folder, "time_events_95.h5")
-
-    #generate_umap_pdf_with_trajectories(glob_folder, "time_events_95.h5", "umap_all_cells.pdf")
-    #fft_spare_l2_matrix_whole_dataset(glob_folder)
+    #cell_num = 2
+    # for cell_num in range(1,123):
+    #     save_circle_watershed_evolution_to_pdf(glob_filtered_folder, cell_num-1, f"cell_{cell_num}_pdf.pdf")
+    #for cell_num in range(1,123):
+    #    save_circle_watershed_evolution_to_pdf(glob_filtered_folder, cell_num-1, f"cell_{cell_num}_pdf.pdf")
+    #cell_num = 41
+    #save_circle_watershed_evolution_to_pdf(glob_folder, cell_num-1, f"cell_{cell_num}_pdf.pdf")
+    #
     
-    #compute_and_save_all_protrusions_and_intrusions(glob_folder, "number_protrusions_dataset.h5")
+    #collect_statistics(glob_filtered_folder)
+    #generate_umap_pdf_for_all_cells(glob_filtered_folder, "/home/pavel/cell_morphology/filtered_data/time_events_filtered.h5", "umap_all_cells.pdf")
+    #fft_spare_l2_matrix(glob_folder,86)
+    #collect_protrusion_intrusion_stats_by_motion_type(glob_filtered_folder, "/home/pavel/cell_morphology/filtered_data/time_events_filtered.h5")
+    #collect_statistics(glob_filtered_folder)
+    #generate_umap_pdf_with_trajectories(glob_filtered_folder, "/home/pavel/cell_morphology/filtered_data/time_events_filtered.h5", "umap_all_cells.pdf")
+    
+    #generate_umap_pdf_with_trajectories_numbered(glob_filtered_folder, "/home/pavel/cell_morphology/filtered_data/time_events_filtered.h5", "umap_all_cells_numbered.pdf")
+    #generate_umap_pdf_with_timeline(glob_folder, "time_events_95.h5", "umap_all_cells_timeline.pdf")
+    #fft_spare_l2_matrix_optimal_fourier(glob_folder)
+    #spikeness_motion_type(glob_filtered_folder, "/home/pavel/cell_morphology/filtered_data/time_events_filtered.h5")
+    #compute_and_save_all_protrusions_and_intrusions(glob_filtered_folder, "number_protrusions_dataset_filtered.h5")
+    #summarize_statistics_from_h5("number_protrusions_dataset_filtered.h5")
     #fft_spare_l2_matrix_whole_dataset_cutted(glob_folder, 'l2_matrix.npy')
     #fft_spare_l2_matrix_whole_dataset_riemann(glob_folder)
+    #["Free Diffusion", "Confined Diffusion","Immobile", "Directed Diffusion", "Unclassified"]
+
+
+    # save_circle_watershed_evolution_to_video_from_data(
+    # direct="/home/pavel/cell_morphology/filtered_data/cells_filtered",
+    # cell_number=34,
+    # video_path="cell_35.mp4",
+    # riemann_path="/home/pavel/Desktop/res24.08.2025/riemann_distances_new_metric_a1b05.npy",
+    # times_path="/home/pavel/Desktop/res24.08.2025/times_new_metric_a1b05.npy",
+    # fps=5,
+    # dpi=100,
+    # )
+    #visualize_l2_umap_from_npy(glob_filtered_folder, "WAS_defined_matrix.npy", migration_types_to_keep=["Free Diffusion", "Confined Diffusion","Immobile", "Directed Diffusion", "Unclassified"], save_name="WASS_OT.png")
+    #plot_all_protrusions_intrusions_grid_to_pdf(glob_filtered_folder, "/home/pavel/cell_morphology/filtered_data/time_events_filtered.h5")
+    #speed_vs_protrusions_boxplot(glob_filtered_folder, "/home/pavel/cell_morphology/filtered_data/time_events_filtered.h5", max_protrusions=6)
